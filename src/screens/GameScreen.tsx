@@ -72,6 +72,10 @@ export function GameScreen() {
   const [showScorecard, setShowScorecard] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [rollToken, setRollToken] = useState(0);
+  const [toastMessage, setToastMessage] = useState('');
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastY = useRef(new Animated.Value(-16)).current;
+  const toastAnimation = useRef<Animated.CompositeAnimation | null>(null);
 
   const scores = histories[currentPlayer];
   const used = useMemo(() => new Set<Category>(scores.map((entry) => entry.category)), [scores]);
@@ -110,6 +114,20 @@ export function GameScreen() {
     if (!hasRolled || used.has(category)) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const entry = { category, score: scoreCategory(category, dice), dice: [...dice] };
+    setToastMessage(`${category} locked in for ${entry.score} ${entry.score === 1 ? 'point' : 'points'}`);
+    toastAnimation.current?.stop(); toastOpacity.setValue(0); toastY.setValue(-16);
+    toastAnimation.current = Animated.sequence([
+      Animated.parallel([
+        Animated.timing(toastOpacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+        Animated.spring(toastY, { toValue: 0, speed: 18, bounciness: 7, useNativeDriver: true }),
+      ]),
+      Animated.delay(1450),
+      Animated.parallel([
+        Animated.timing(toastOpacity, { toValue: 0, duration: 220, useNativeDriver: true }),
+        Animated.timing(toastY, { toValue: -12, duration: 220, useNativeDriver: true }),
+      ]),
+    ]);
+    toastAnimation.current.start();
     setHistories((current) => ({ ...current, [currentPlayer]: [...current[currentPlayer], entry] }));
     nextRound();
   };
@@ -148,7 +166,12 @@ export function GameScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
+    <View style={styles.gameContainer}>
+      <Animated.View pointerEvents="none" style={[styles.toast, { opacity: toastOpacity, transform: [{ translateY: toastY }] }]}>
+        <Ionicons name="checkmark-circle" size={22} color={colors.background} />
+        <Text style={styles.toastText}>{toastMessage}</Text>
+      </Animated.View>
+      <ScrollView contentContainerStyle={styles.content}>
       <View style={styles.modePicker}>
         <Pressable onPress={() => changeMode(false)} style={[styles.mode, !twoPlayer && styles.modeActive]}><Text style={[styles.modeText, !twoPlayer && styles.modeTextActive]}>Single Player</Text></Pressable>
         <Pressable onPress={() => changeMode(true)} style={[styles.mode, twoPlayer && styles.modeActive]}><Text style={[styles.modeText, twoPlayer && styles.modeTextActive]}>Two Player</Text></Pressable>
@@ -181,12 +204,15 @@ export function GameScreen() {
       </View>}
       {complete && !twoPlayer && <Pressable disabled={submitting} onPress={sendScore} style={styles.primaryButton}><Text style={styles.primaryText}>{submitting ? 'Submitting…' : 'Submit Score'}</Text></Pressable>}
       <View style={styles.actions}><Pressable onPress={reset} style={styles.resetButton}><Text style={styles.resetText}>Reset</Text></Pressable><Pressable onPress={() => void shareScorecard()} style={styles.shareButton}><Text style={styles.shareText}>Share</Text></Pressable></View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 18, paddingBottom: 48 }, modePicker: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 12, padding: 4 },
+  gameContainer: { flex: 1 }, content: { padding: 18, paddingBottom: 48 },
+  toast: { position: 'absolute', zIndex: 20, top: 10, left: 24, right: 24, minHeight: 52, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.yellow, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: colors.yellow, shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 12 }, toastText: { color: colors.background, fontWeight: '900', textAlign: 'center', flexShrink: 1 },
+  modePicker: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 12, padding: 4 },
   mode: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 9 }, modeActive: { backgroundColor: colors.cyan }, modeText: { color: colors.muted, fontWeight: '800' }, modeTextActive: { color: colors.background },
   title: { color: colors.yellow, fontSize: 30, fontWeight: '900', textAlign: 'center', marginTop: 20 }, playerTwo: { color: colors.pink }, help: { color: colors.pink, textTransform: 'uppercase', fontWeight: '800', textAlign: 'center', marginVertical: 15 },
   diceRow: { flexDirection: 'row', justifyContent: 'center', gap: 11, marginBottom: 20, paddingTop: 15 },

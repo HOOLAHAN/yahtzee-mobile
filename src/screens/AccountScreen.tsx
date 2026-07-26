@@ -11,9 +11,48 @@ export function AccountScreen() {
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const [username, setUsername] = useState(''); const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [oldPassword, setOldPassword] = useState(''); const [newPassword, setNewPassword] = useState('');
+  const [managementError, setManagementError] = useState(''); const [managementBusy, setManagementBusy] = useState(false);
+
+  const changePassword = async () => {
+    if (!oldPassword || !newPassword) return setManagementError('Enter your current and new passwords.');
+    setManagementBusy(true); setManagementError('');
+    try {
+      await auth.changePassword(oldPassword, newPassword);
+      setOldPassword(''); setNewPassword(''); setShowPasswordChange(false);
+      Alert.alert('Password changed', 'Your new password is ready to use.');
+    } catch (caught) { setManagementError(caught instanceof Error ? caught.message : 'Unable to change password.'); }
+    finally { setManagementBusy(false); }
+  };
+
+  const confirmDelete = () => Alert.alert(
+    'Delete account?',
+    'This permanently removes your Cognito account and cannot be undone.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete Account', style: 'destructive', onPress: () => {
+        setManagementBusy(true); setManagementError('');
+        void auth.deleteAccount().catch((caught) => setManagementError(caught instanceof Error ? caught.message : 'Unable to delete account.')).finally(() => setManagementBusy(false));
+      } },
+    ],
+  );
 
   if (auth.loading) return <ActivityIndicator style={styles.loader} color={colors.cyan} size="large" />;
-  if (auth.user) return <ScrollView contentContainerStyle={styles.content}><Text style={styles.title}>Account</Text><View style={styles.card}><Text style={styles.label}>Signed in as</Text><Text style={styles.username}>{auth.user.username}</Text>{auth.user.email && <Text style={styles.email}>{auth.user.email}</Text>}</View><Text style={styles.aboutTitle}>Shared Account</Text><Text style={styles.about}>Your web and mobile games use the same Cognito account and leaderboard.</Text><Pressable onPress={() => void auth.logout()} style={styles.outlineButton}><Text style={styles.outlineText}>Sign Out</Text></Pressable></ScrollView>;
+  if (auth.user) return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+    <Text style={styles.title}>Account</Text>
+    <View style={styles.card}><Text style={styles.label}>Signed in as</Text><Text style={styles.username}>{auth.user.username}</Text>{auth.user.email && <Text style={styles.email}>{auth.user.email}</Text>}</View>
+    <Text style={styles.aboutTitle}>Account Security</Text><Text style={styles.about}>Manage the Cognito account shared by the website and mobile app.</Text>
+    <Pressable onPress={() => { setShowPasswordChange((value) => !value); setManagementError(''); }} style={styles.managementButton}><Text style={styles.managementButtonText}>{showPasswordChange ? 'Cancel Password Change' : 'Change Password'}</Text></Pressable>
+    {showPasswordChange && <View style={styles.managementPanel}>
+      <TextInput value={oldPassword} onChangeText={setOldPassword} placeholder="Current password" placeholderTextColor={colors.muted} style={styles.input} secureTextEntry autoComplete="current-password" />
+      <TextInput value={newPassword} onChangeText={setNewPassword} placeholder="New password" placeholderTextColor={colors.muted} style={styles.input} secureTextEntry autoComplete="new-password" />
+      <Pressable disabled={managementBusy} onPress={() => void changePassword()} style={styles.button}><Text style={styles.buttonText}>{managementBusy ? 'Updating…' : 'Update Password'}</Text></Pressable>
+    </View>}
+    {managementError ? <Text style={styles.error}>{managementError}</Text> : null}
+    <Pressable disabled={managementBusy} onPress={confirmDelete} style={styles.deleteButton}><Text style={styles.deleteText}>Delete Account</Text></Pressable>
+    <Pressable onPress={() => void auth.logout()} style={styles.outlineButton}><Text style={styles.outlineText}>Sign Out</Text></Pressable>
+  </ScrollView>;
 
   const submit = async () => {
     setBusy(true); setError('');
@@ -54,5 +93,5 @@ export function AccountScreen() {
 const styles = StyleSheet.create({
   content: { flexGrow: 1, padding: 24, justifyContent: 'center' }, loader: { flex: 1 }, title: { color: colors.yellow, fontSize: 30, fontWeight: '900', textAlign: 'center' }, subtitle: { color: colors.mint, textAlign: 'center', marginTop: 8, marginBottom: 24 },
   input: { backgroundColor: colors.surface, color: colors.white, borderColor: colors.cyan, borderWidth: 1, borderRadius: 12, padding: 15, marginBottom: 12, fontSize: 16 }, button: { backgroundColor: colors.cyan, padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 6 }, buttonText: { color: colors.background, fontWeight: '900', fontSize: 16 }, error: { color: colors.danger, marginBottom: 8 }, link: { color: colors.pink, textAlign: 'center', marginTop: 18, fontWeight: '700' },
-  card: { backgroundColor: colors.surface, borderColor: colors.cyan, borderWidth: 1, borderRadius: 16, padding: 24, marginVertical: 28, alignItems: 'center' }, label: { color: colors.muted }, username: { color: colors.yellow, fontSize: 24, fontWeight: '900', marginTop: 8 }, email: { color: colors.mint, marginTop: 6 }, outlineButton: { borderColor: colors.pink, borderWidth: 1, borderRadius: 14, padding: 15, alignItems: 'center', marginTop: 24 }, outlineText: { color: colors.pink, fontWeight: '800' }, aboutTitle: { color: colors.cyan, fontSize: 20, fontWeight: '900' }, about: { color: colors.mint, lineHeight: 21, marginTop: 8 },
+  card: { backgroundColor: colors.surface, borderColor: colors.cyan, borderWidth: 1, borderRadius: 16, padding: 24, marginVertical: 28, alignItems: 'center' }, label: { color: colors.muted }, username: { color: colors.yellow, fontSize: 24, fontWeight: '900', marginTop: 8 }, email: { color: colors.mint, marginTop: 6 }, outlineButton: { borderColor: colors.pink, borderWidth: 1, borderRadius: 14, padding: 15, alignItems: 'center', marginTop: 12 }, outlineText: { color: colors.pink, fontWeight: '800' }, aboutTitle: { color: colors.cyan, fontSize: 20, fontWeight: '900' }, about: { color: colors.mint, lineHeight: 21, marginTop: 8, marginBottom: 16 }, managementButton: { backgroundColor: colors.cyan, borderRadius: 12, padding: 14, alignItems: 'center' }, managementButtonText: { color: colors.background, fontWeight: '900' }, managementPanel: { backgroundColor: colors.surface, borderRadius: 12, padding: 12, marginTop: 10 }, deleteButton: { borderColor: colors.danger, borderWidth: 1, borderRadius: 14, padding: 15, alignItems: 'center', marginTop: 18 }, deleteText: { color: colors.danger, fontWeight: '900' },
 });

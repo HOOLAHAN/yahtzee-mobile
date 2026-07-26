@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { confirmResetPassword, confirmSignUp, fetchUserAttributes, getCurrentUser, resendSignUpCode, resetPassword, signIn, signOut, signUp } from 'aws-amplify/auth';
+import { confirmResetPassword, confirmSignUp, deleteUser, fetchUserAttributes, getCurrentUser, resendSignUpCode, resetPassword, signIn, signOut, signUp, updatePassword } from 'aws-amplify/auth';
 
 interface UserDetails {
   userId: string;
@@ -16,6 +16,8 @@ interface AuthValue {
   resendRegistrationCode(email: string): Promise<void>;
   requestPasswordReset(email: string): Promise<void>;
   finishPasswordReset(email: string, code: string, newPassword: string): Promise<void>;
+  changePassword(oldPassword: string, newPassword: string): Promise<void>;
+  deleteAccount(): Promise<void>;
   logout(): Promise<void>;
 }
 
@@ -68,6 +70,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     finishPasswordReset: async (email, code, newPassword) => {
       await confirmResetPassword({ username: email.trim(), confirmationCode: code.trim(), newPassword });
+    },
+    changePassword: async (oldPassword, newPassword) => {
+      await updatePassword({ oldPassword, newPassword });
+    },
+    deleteAccount: async () => {
+      await deleteUser();
+      setUser(null);
     },
     logout: async () => {
       await signOut();
