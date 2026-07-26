@@ -201,7 +201,7 @@ export function GameScreen() {
   const [toastMessage, setToastMessage] = useState('');
   const computerTurnRunning = useRef(false);
   const toastOpacity = useRef(new Animated.Value(0)).current;
-  const toastY = useRef(new Animated.Value(-16)).current;
+  const toastY = useRef(new Animated.Value(16)).current;
   const toastAnimation = useRef<Animated.CompositeAnimation | null>(null);
 
   const scores = histories[currentPlayer];
@@ -246,7 +246,7 @@ export function GameScreen() {
   }, []);
 
   const showToast = (message: string) => {
-    setToastMessage(message); toastAnimation.current?.stop(); toastOpacity.setValue(0); toastY.setValue(-16);
+    setToastMessage(message); toastAnimation.current?.stop(); toastOpacity.setValue(0); toastY.setValue(16);
     if (reduceMotion) {
       toastOpacity.setValue(1);
       toastAnimation.current = Animated.sequence([Animated.delay(1300), Animated.timing(toastOpacity, { toValue: 0, duration: 1, useNativeDriver: true })]);
@@ -254,7 +254,7 @@ export function GameScreen() {
       toastAnimation.current = Animated.sequence([
         Animated.parallel([Animated.timing(toastOpacity, { toValue: 1, duration: 180, useNativeDriver: true }), Animated.spring(toastY, { toValue: 0, speed: 18, bounciness: 7, useNativeDriver: true })]),
         Animated.delay(1450),
-        Animated.parallel([Animated.timing(toastOpacity, { toValue: 0, duration: 220, useNativeDriver: true }), Animated.timing(toastY, { toValue: -12, duration: 220, useNativeDriver: true })]),
+        Animated.parallel([Animated.timing(toastOpacity, { toValue: 0, duration: 220, useNativeDriver: true }), Animated.timing(toastY, { toValue: 12, duration: 220, useNativeDriver: true })]),
       ]);
     }
     toastAnimation.current.start();
@@ -414,7 +414,7 @@ export function GameScreen() {
     <View style={styles.turnControls}>
       <GameModePicker active={activeMode} onChange={changeMode} />
       <View style={styles.turnHeadingRow}><View><Text style={[styles.title, { color: currentProfile.score }]}>{isComputerTurn ? "Computer's turn" : computerOpponent ? 'Your turn' : twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={[styles.computerBadge, { backgroundColor: computerProfile.soft }]}><Ionicons name="hardware-chip-outline" size={13} color={computerProfile.accent} /><Text style={[styles.computerBadgeText, { color: computerProfile.accent }]}>Thinking</Text></View>}</View>
-      <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} accentColor={currentProfile.accent} heldColor={currentProfile.score} softColor={colors.background} onPress={() => toggleHeld(index)} />)}</View>
+      <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} accentColor={currentProfile.accent} heldColor={colors.yellow} softColor={colors.background} onPress={() => toggleHeld(index)} />)}</View>
       <View style={styles.rollMeta}><Text style={[styles.help, { color: currentProfile.accent }]}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && { backgroundColor: currentProfile.accent, borderColor: currentProfile.accent }]} />)}</View></View>
       <Pressable accessibilityRole="button" accessibilityLabel={`Roll dice, ${rollsLeft} rolls remaining`} disabled={rollsLeft === 0 || complete || isComputerTurn} onPress={roll} style={({ pressed }) => [styles.primaryButton, { backgroundColor: currentProfile.accent, shadowColor: currentProfile.accent }, (rollsLeft === 0 || complete || isComputerTurn) && styles.disabled, pressed && styles.pressed]}><View style={styles.buttonContent}><Ionicons name={isComputerTurn ? 'hardware-chip-outline' : 'dice'} size={22} color={colors.background} /><Text style={styles.primaryText}>{isComputerTurn ? 'Computer Playing' : hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></View></Pressable>
       <View style={styles.compactSummary}><Text style={styles.compactLabel}>Best now <Text style={[styles.compactValue, { color: currentProfile.score }]}>{currentScore}</Text></Text><Text style={styles.compactLabel}>{isComputerTurn ? 'Computer' : 'Total'} <Text style={[styles.compactValue, { color: currentProfile.score }]}>{totals[currentPlayer]}</Text></Text>{twoPlayer && <Text style={styles.compactLabel}>{computerOpponent ? 'You' : `P${currentPlayer === 1 ? 2 : 1}`} <Text style={[styles.compactValue, { color: currentPlayer === 1 ? secondPlayerProfile.score : playerProfiles[0].score }]}>{totals[currentPlayer === 1 ? 2 : 1]}</Text></Text>}</View>
@@ -454,7 +454,7 @@ export function GameScreen() {
 
 const styles = StyleSheet.create({
   gameContainer: { flex: 1 }, content: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 48 }, contentWithLock: { paddingBottom: 105 },
-  toast: { position: 'absolute', zIndex: 20, top: 10, left: 24, right: 24, minHeight: 52, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.yellow, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: colors.yellow, shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 12 }, toastText: { color: colors.background, fontWeight: '900', textAlign: 'center', flexShrink: 1 },
+  toast: { position: 'absolute', zIndex: 20, bottom: 10, left: 14, right: 14, minHeight: 72, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.yellow, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: colors.yellow, shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 12 }, toastText: { color: colors.background, fontWeight: '900', textAlign: 'center', flexShrink: 1 },
   turnControls: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, backgroundColor: colors.background, borderBottomColor: '#253438', borderBottomWidth: 1 },
   scorekeeperModeBar: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 6, borderBottomColor: '#253438', borderBottomWidth: 1 }, modePicker: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 10, padding: 3, gap: 2 }, mode: { flex: 1, minHeight: 31, paddingHorizontal: 2, alignItems: 'center', justifyContent: 'center', borderRadius: 7 }, modeActive: { backgroundColor: colors.cyan }, modeText: { color: colors.muted, fontWeight: '800', fontSize: 9.5, textAlign: 'center' }, modeTextActive: { color: colors.background },
   turnHeadingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 9 }, title: { color: colors.yellow, fontSize: 21, fontWeight: '900' }, playerTwo: { color: colors.pink }, progress: { color: colors.muted, fontSize: 12, marginTop: 1 }, computerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#34202f', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5 }, computerBadgeText: { color: colors.pink, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
