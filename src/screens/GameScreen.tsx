@@ -38,6 +38,7 @@ type Histories = Record<Player, ScoreEntry[]>;
 
 interface PersistedGame {
   twoPlayer: boolean;
+  computerOpponent?: boolean;
   currentPlayer: Player;
   dice: DieFace[];
   held: number[];
@@ -95,9 +96,42 @@ function AnimatedDie({ value, index, held, rollToken, canHold, reduceMotion, onP
   </Animated.View>;
 }
 
+const pause = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+function computerHeldDice(dice: DieFace[], used: Set<Category>) {
+  const counts = new Map<DieFace, number>();
+  dice.forEach((die) => counts.set(die, (counts.get(die) ?? 0) + 1));
+  const grouped = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0]);
+  const [bestFace, bestCount] = grouped[0];
+  const matchingUpper = categories[bestFace - 1];
+  const combinationOpen = ['Three of a Kind', 'Four of a Kind', 'Full House', 'Yahtzee'].some((category) => !used.has(category as Category));
+
+  if (bestCount >= 2 && (combinationOpen || !used.has(matchingUpper))) {
+    return new Set(dice.map((die, index) => die === bestFace ? index : -1).filter((index) => index >= 0));
+  }
+
+  const straightOpen = !used.has('Small Straight') || !used.has('Large Straight');
+  if (straightOpen) {
+    const runs: DieFace[][] = [[1, 2, 3, 4, 5], [2, 3, 4, 5, 6]];
+    const target = runs.sort((a, b) => b.filter((face) => dice.includes(face)).length - a.filter((face) => dice.includes(face)).length)[0];
+    const seen = new Set<DieFace>();
+    return new Set(dice.map((die, index) => target.includes(die) && !seen.has(die) ? (seen.add(die), index) : -1).filter((index) => index >= 0));
+  }
+
+  return new Set(dice.map((die, index) => die >= 5 ? index : -1).filter((index) => index >= 0));
+}
+
+function computerCategory(dice: DieFace[], used: Set<Category>) {
+  const available = categories.filter((category) => !used.has(category));
+  const scoring = available.filter((category) => scoreCategory(category, dice) > 0);
+  if (scoring.length) return scoring.reduce((best, category) => categoryRecommendationValue(category, dice) > categoryRecommendationValue(best, dice) ? category : best);
+  return available.find((category) => upperCategories.includes(category)) ?? available[0];
+}
+
 export function GameScreen() {
   const { user } = useAuth();
   const [twoPlayer, setTwoPlayer] = useState(false);
+  const [computerOpponent, setComputerOpponent] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState<Player>(1);
   const [viewingPlayer, setViewingPlayer] = useState<Player>(1);
   const [dice, setDice] = useState<DieFace[]>(initialDice);
@@ -114,6 +148,7 @@ export function GameScreen() {
   const [reduceMotion, setReduceMotion] = useState(false);
   const [rollToken, setRollToken] = useState(0);
   const [toastMessage, setToastMessage] = useState('');
+  const computerTurnRunning = useRef(false);
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastY = useRef(new Animated.Value(-16)).current;
   const toastAnimation = useRef<Animated.CompositeAnimation | null>(null);
@@ -126,6 +161,7 @@ export function GameScreen() {
   const complete = histories[1].length === categories.length && (!twoPlayer || histories[2].length === categories.length);
   const currentScore = hasRolled ? maximumAvailableScore(dice, used) : 0;
   const currentRound = Math.min(scores.length + 1, categories.length);
+  const isComputerTurn = computerOpponent && currentPlayer === 2;
   const recommendedCategory = useMemo(() => {
     if (!hasRolled) return null;
     return categories
@@ -138,7 +174,7 @@ export function GameScreen() {
       if (!value) return;
       const saved = JSON.parse(value) as PersistedGame;
       if (!Array.isArray(saved.dice) || saved.dice.length !== 5 || !saved.histories) return;
-      setTwoPlayer(Boolean(saved.twoPlayer)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
+      setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
       setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories(saved.histories); setSubmitted(Boolean(saved.submitted));
       if (saved.gameId) setGameId(saved.gameId);
     }).catch(() => undefined).finally(() => setHydrated(true));
@@ -146,9 +182,9 @@ export function GameScreen() {
 
   useEffect(() => {
     if (!hydrated) return;
-    const state: PersistedGame = { twoPlayer, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, gameId };
+    const state: PersistedGame = { twoPlayer, computerOpponent, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, gameId };
     void AsyncStorage.setItem(storageKey, JSON.stringify(state));
-  }, [currentPlayer, dice, gameId, hasRolled, held, histories, hydrated, rollsLeft, submitted, twoPlayer]);
+  }, [computerOpponent, currentPlayer, dice, gameId, hasRolled, held, histories, hydrated, rollsLeft, submitted, twoPlayer]);
 
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -171,6 +207,50 @@ export function GameScreen() {
     toastAnimation.current.start();
   };
 
+  useEffect(() => {
+    if (!hydrated || !isComputerTurn || complete || computerTurnRunning.current) return;
+    let cancelled = false;
+    computerTurnRunning.current = true;
+
+    const playComputerTurn = async () => {
+      const computerUsed = new Set<Category>(histories[2].map((entry) => entry.category));
+      let computerDice = [...initialDice];
+      let computerHeld = new Set<number>();
+      let remaining = 3;
+
+      setDice(initialDice); setHeld(new Set()); setRollsLeft(3); setHasRolled(false); setSelectedCategory(null);
+      for (let turnRoll = 0; turnRoll < 3 && !cancelled; turnRoll += 1) {
+        await pause(reduceMotion ? 180 : 650);
+        if (cancelled) return;
+        computerDice = computerDice.map((die, index) => computerHeld.has(index) ? die : rollDie());
+        remaining -= 1;
+        setDice([...computerDice]); setRollsLeft(remaining); setHasRolled(true); setRollToken((token) => token + 1);
+        await pause(reduceMotion ? 180 : 650);
+
+        const strongCategory = computerCategory(computerDice, computerUsed);
+        if (['Large Straight', 'Full House', 'Yahtzee'].includes(strongCategory) && scoreCategory(strongCategory, computerDice) > 0) break;
+        if (turnRoll < 2) {
+          computerHeld = computerHeldDice(computerDice, computerUsed);
+          setHeld(new Set(computerHeld));
+          await pause(reduceMotion ? 140 : 480);
+        }
+      }
+
+      if (cancelled) return;
+      const category = computerCategory(computerDice, computerUsed);
+      const entry: ScoreEntry = { category, score: scoreCategory(category, computerDice), dice: [...computerDice] };
+      setSelectedCategory(category);
+      await pause(reduceMotion ? 220 : 800);
+      if (cancelled) return;
+      setHistories((current) => ({ ...current, 2: [...current[2], entry] }));
+      showToast(`Computer chose ${category} for ${entry.score} ${entry.score === 1 ? 'point' : 'points'}`);
+      setDice(initialDice); setHeld(new Set()); setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setCurrentPlayer(1); setViewingPlayer(1);
+    };
+
+    void playComputerTurn().finally(() => { computerTurnRunning.current = false; });
+    return () => { cancelled = true; computerTurnRunning.current = false; };
+  }, [complete, histories, hydrated, isComputerTurn, reduceMotion]);
+
   const nextRound = () => {
     setDice(initialDice); setHeld(new Set()); setRollsLeft(3); setHasRolled(false); setSelectedCategory(null);
     if (twoPlayer) { const next = currentPlayer === 1 ? 2 : 1; setCurrentPlayer(next); setViewingPlayer(next); }
@@ -183,7 +263,7 @@ export function GameScreen() {
   };
 
   const toggleHeld = (index: number) => {
-    if (!hasRolled) return;
+    if (!hasRolled || isComputerTurn) return;
     void Haptics.selectionAsync();
     setHeld((current) => { const next = new Set(current); next.has(index) ? next.delete(index) : next.add(index); return next; });
   };
@@ -206,12 +286,13 @@ export function GameScreen() {
     { text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: clearGame },
   ]);
 
-  const applyMode = (enabled: boolean) => { setTwoPlayer(enabled); clearGame(); };
-  const changeMode = (enabled: boolean) => {
-    if (enabled === twoPlayer) return;
+  const applyMode = (mode: 'solo' | 'pass' | 'computer') => { setTwoPlayer(mode !== 'solo'); setComputerOpponent(mode === 'computer'); clearGame(); };
+  const changeMode = (mode: 'solo' | 'pass' | 'computer') => {
+    const activeMode = computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
+    if (mode === activeMode) return;
     if (histories[1].length || histories[2].length) Alert.alert('Start a new game?', 'Changing mode resets the current scorecard.', [
-      { text: 'Cancel', style: 'cancel' }, { text: 'Change Mode', style: 'destructive', onPress: () => applyMode(enabled) },
-    ]); else applyMode(enabled);
+      { text: 'Cancel', style: 'cancel' }, { text: 'Change Mode', style: 'destructive', onPress: () => applyMode(mode) },
+    ]); else applyMode(mode);
   };
 
   const shareScorecard = async () => {
@@ -221,7 +302,7 @@ export function GameScreen() {
       const upper = upperCategories.map((category) => `${categoryLabels[category].padEnd(13)} ${scoreFor(category)}`).join('\n');
       const lower = categories.slice(6).map((category) => `${categoryLabels[category].padEnd(13)} ${scoreFor(category)}`).join('\n');
       return [
-        twoPlayer ? `PLAYER ${player}` : 'FINAL SCORE',
+        twoPlayer ? computerOpponent ? player === 1 ? 'YOU' : 'COMPUTER' : `PLAYER ${player}` : 'FINAL SCORE',
         '────────────────────',
         `${totals[player]} POINTS`,
         '',
@@ -250,7 +331,7 @@ export function GameScreen() {
     finally { setSubmitting(false); }
   };
 
-  const winner = twoPlayer && complete ? totals[1] === totals[2] ? 'Draw game' : `Player ${totals[1] > totals[2] ? 1 : 2} wins` : 'Game complete';
+  const winner = twoPlayer && complete ? totals[1] === totals[2] ? 'Draw game' : totals[1] > totals[2] ? 'Player 1 wins' : computerOpponent ? 'Computer wins' : 'Player 2 wins' : 'Game complete';
 
   const scorecardContent = (player: Player) => <>
     <View style={styles.scorecardOverview}>
@@ -273,29 +354,30 @@ export function GameScreen() {
 
     <View style={styles.turnControls}>
       <View style={styles.modePicker}>
-        <Pressable accessibilityRole="button" accessibilityState={{ selected: !twoPlayer }} onPress={() => changeMode(false)} style={[styles.mode, !twoPlayer && styles.modeActive]}><Text style={[styles.modeText, !twoPlayer && styles.modeTextActive]}>Single Player</Text></Pressable>
-        <Pressable accessibilityRole="button" accessibilityState={{ selected: twoPlayer }} onPress={() => changeMode(true)} style={[styles.mode, twoPlayer && styles.modeActive]}><Text style={[styles.modeText, twoPlayer && styles.modeTextActive]}>Pass & Play</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityState={{ selected: !twoPlayer }} onPress={() => changeMode('solo')} style={[styles.mode, !twoPlayer && styles.modeActive]}><Text style={[styles.modeText, !twoPlayer && styles.modeTextActive]}>Solo</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityState={{ selected: computerOpponent }} onPress={() => changeMode('computer')} style={[styles.mode, computerOpponent && styles.modeActive]}><Text style={[styles.modeText, computerOpponent && styles.modeTextActive]}>Vs Computer</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityState={{ selected: twoPlayer && !computerOpponent }} onPress={() => changeMode('pass')} style={[styles.mode, twoPlayer && !computerOpponent && styles.modeActive]}><Text style={[styles.modeText, twoPlayer && !computerOpponent && styles.modeTextActive]}>Pass & Play</Text></Pressable>
       </View>
-      <View style={styles.turnHeadingRow}><View><Text style={[styles.title, currentPlayer === 2 && styles.playerTwo]}>{twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>Round {currentRound} of {categories.length}</Text></View></View>
-      <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete} reduceMotion={reduceMotion} onPress={() => toggleHeld(index)} />)}</View>
-      <View style={styles.rollMeta}><Text style={styles.help}>{hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && styles.rollDotAvailable]} />)}</View></View>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Roll dice, ${rollsLeft} rolls remaining`} disabled={rollsLeft === 0 || complete} onPress={roll} style={({ pressed }) => [styles.primaryButton, (rollsLeft === 0 || complete) && styles.disabled, pressed && styles.pressed]}><View style={styles.buttonContent}><Ionicons name="dice" size={22} color={colors.background} /><Text style={styles.primaryText}>{hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></View></Pressable>
-      <View style={styles.compactSummary}><Text style={styles.compactLabel}>Best now <Text style={styles.compactValue}>{currentScore}</Text></Text><Text style={styles.compactLabel}>Total <Text style={styles.compactValue}>{totals[currentPlayer]}</Text></Text>{twoPlayer && <Text style={styles.compactLabel}>P{currentPlayer === 1 ? 2 : 1} <Text style={styles.compactValue}>{totals[currentPlayer === 1 ? 2 : 1]}</Text></Text>}</View>
+      <View style={styles.turnHeadingRow}><View><Text style={[styles.title, currentPlayer === 2 && styles.playerTwo]}>{isComputerTurn ? "Computer's turn" : twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={styles.computerBadge}><Ionicons name="hardware-chip-outline" size={13} color={colors.pink} /><Text style={styles.computerBadgeText}>Thinking</Text></View>}</View>
+      <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} onPress={() => toggleHeld(index)} />)}</View>
+      <View style={styles.rollMeta}><Text style={styles.help}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && styles.rollDotAvailable]} />)}</View></View>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Roll dice, ${rollsLeft} rolls remaining`} disabled={rollsLeft === 0 || complete || isComputerTurn} onPress={roll} style={({ pressed }) => [styles.primaryButton, (rollsLeft === 0 || complete || isComputerTurn) && styles.disabled, pressed && styles.pressed]}><View style={styles.buttonContent}><Ionicons name={isComputerTurn ? 'hardware-chip-outline' : 'dice'} size={22} color={colors.background} /><Text style={styles.primaryText}>{isComputerTurn ? 'Computer Playing' : hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></View></Pressable>
+      <View style={styles.compactSummary}><Text style={styles.compactLabel}>Best now <Text style={styles.compactValue}>{currentScore}</Text></Text><Text style={styles.compactLabel}>{isComputerTurn ? 'Computer' : 'Total'} <Text style={styles.compactValue}>{totals[currentPlayer]}</Text></Text>{twoPlayer && <Text style={styles.compactLabel}>{computerOpponent ? 'You' : `P${currentPlayer === 1 ? 2 : 1}`} <Text style={styles.compactValue}>{totals[currentPlayer === 1 ? 2 : 1]}</Text></Text>}</View>
     </View>
 
     <ScrollView contentContainerStyle={[styles.content, selectedCategory && styles.contentWithLock]}>
       {complete ? <View style={styles.completeCard}>
         <View style={styles.completeIcon}><Ionicons name="trophy-outline" size={34} color={colors.yellow} /></View><Text style={styles.completeTitle}>{winner}</Text>
-        {twoPlayer ? <View style={styles.finalTotals}><Text style={styles.playerOneText}>Player 1 · {totals[1]}</Text><Text style={styles.playerTwoText}>Player 2 · {totals[2]}</Text></View> : <Text style={styles.finalScore}>{totals[1]}</Text>}
+        {twoPlayer ? <View style={styles.finalTotals}><Text style={styles.playerOneText}>{computerOpponent ? 'You' : 'Player 1'} · {totals[1]}</Text><Text style={styles.playerTwoText}>{computerOpponent ? 'Computer' : 'Player 2'} · {totals[2]}</Text></View> : <Text style={styles.finalScore}>{totals[1]}</Text>}
         <Text style={styles.completeCopy}>{bonuses[1] ? `Includes the ${upperBonusPoints}-point upper-section bonus.` : 'Final scorecard complete.'}</Text>
         {!twoPlayer && <Pressable disabled={submitting || submitted} onPress={() => void sendScore()} style={[styles.primaryButton, submitted && styles.disabled]}><Text style={styles.primaryText}>{submitted ? 'Submitted' : submitting ? 'Submitting…' : 'Submit to Leaderboard'}</Text></Pressable>}
         <View style={styles.completeActions}><Pressable onPress={() => void shareScorecard()} style={styles.secondaryButton}><Ionicons name="share-outline" size={19} color={colors.cyan} /><Text style={styles.secondaryText}>Share</Text></Pressable><Pressable onPress={clearGame} style={styles.newGameButton}><Ionicons name="refresh" size={19} color={colors.background} /><Text style={styles.newGameText}>New Game</Text></Pressable></View>
       </View> : <>
-        <View style={styles.sectionHeadingRow}><View><Text style={styles.sectionTitle}>Choose a category</Text><Text style={styles.sectionSubtitle}>{hasRolled ? 'Tap once to preview, then lock it in.' : 'Categories unlock after your first roll.'}</Text></View>{recommendedCategory && <View style={styles.recommendedLegend}><Ionicons name="sparkles" size={14} color={colors.yellow} /><Text style={styles.recommendedLegendText}>Best</Text></View>}</View>
+        <View style={styles.sectionHeadingRow}><View><Text style={styles.sectionTitle}>{isComputerTurn ? 'Computer strategy' : 'Choose a category'}</Text><Text style={styles.sectionSubtitle}>{isComputerTurn ? 'Watch the computer roll, hold and choose.' : hasRolled ? 'Tap once to preview, then lock it in.' : 'Categories unlock after your first roll.'}</Text></View>{recommendedCategory && !isComputerTurn && <View style={styles.recommendedLegend}><Ionicons name="sparkles" size={14} color={colors.yellow} /><Text style={styles.recommendedLegendText}>Best</Text></View>}</View>
         <View style={styles.categoryGrid}>{categories.map((category) => {
           const entry = scores.find((item) => item.category === category); const preview = hasRolled ? scoreCategory(category, dice) : 0;
           const selected = selectedCategory === category; const recommended = recommendedCategory === category && !entry;
-          return <Pressable accessibilityRole="button" accessibilityLabel={`${category}, ${entry ? `${entry.score} points, used` : `${preview} points`}${recommended ? ', best available score' : ''}`} accessibilityState={{ disabled: !hasRolled || Boolean(entry), selected }} key={category} disabled={!hasRolled || Boolean(entry)} onPress={() => setSelectedCategory(category)} style={[styles.category, category === 'Chance' && styles.chanceCategory, entry && styles.usedCategory, recommended && styles.recommendedCategory, selected && styles.selectedCategory]}>
+          return <Pressable accessibilityRole="button" accessibilityLabel={`${category}, ${entry ? `${entry.score} points, used` : `${preview} points`}${recommended ? ', best available score' : ''}`} accessibilityState={{ disabled: !hasRolled || Boolean(entry) || isComputerTurn, selected }} key={category} disabled={!hasRolled || Boolean(entry) || isComputerTurn} onPress={() => setSelectedCategory(category)} style={[styles.category, category === 'Chance' && styles.chanceCategory, entry && styles.usedCategory, recommended && !isComputerTurn && styles.recommendedCategory, selected && styles.selectedCategory]}>
             <Text numberOfLines={2} style={[styles.categoryName, entry && styles.usedText]}>{categoryLabels[category]}</Text><View style={[styles.scoreBadge, entry && styles.usedBadge, preview === 0 && !entry && styles.zeroBadge]}><Text style={[styles.scoreBadgeText, entry && styles.usedText]}>{entry?.score ?? preview}</Text></View>{recommended && <Ionicons name="sparkles" size={12} color={colors.yellow} style={styles.recommendedIcon} />}
           </Pressable>;
         })}</View>
@@ -303,12 +385,12 @@ export function GameScreen() {
       </>}
     </ScrollView>
 
-    {selectedCategory && !complete && <View style={styles.lockBar}><View><Text style={styles.lockLabel}>{selectedCategory}</Text><Text style={styles.lockScore}>{scoreCategory(selectedCategory, dice)} points</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Lock in ${selectedCategory} for ${scoreCategory(selectedCategory, dice)} points`} onPress={lockScore} style={styles.lockButton}><Ionicons name="lock-closed" size={18} color={colors.background} /><Text style={styles.lockButtonText}>Lock In</Text></Pressable></View>}
+    {selectedCategory && !complete && !isComputerTurn && <View style={styles.lockBar}><View><Text style={styles.lockLabel}>{selectedCategory}</Text><Text style={styles.lockScore}>{scoreCategory(selectedCategory, dice)} points</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Lock in ${selectedCategory} for ${scoreCategory(selectedCategory, dice)} points`} onPress={lockScore} style={styles.lockButton}><Ionicons name="lock-closed" size={18} color={colors.background} /><Text style={styles.lockButtonText}>Lock In</Text></Pressable></View>}
 
     <Modal transparent animationType="slide" visible={showScorecard} onRequestClose={() => setShowScorecard(false)}>
       <View style={styles.sheetBackdrop}><Pressable accessibilityLabel="Close scorecard" style={styles.sheetDismissArea} onPress={() => setShowScorecard(false)} /><SafeAreaView style={styles.sheet}>
-        <View style={styles.sheetHandle} /><View style={styles.sheetHeader}><View><Text style={styles.sheetTitle}>Scorecard</Text><Text style={styles.sheetSubtitle}>{twoPlayer ? `Player ${viewingPlayer}` : 'Single Player'} · Round {Math.min(histories[viewingPlayer].length + 1, categories.length)} of {categories.length}</Text></View><Pressable accessibilityLabel="Close scorecard" onPress={() => setShowScorecard(false)} style={styles.sheetClose}><Ionicons name="close" size={23} color={colors.white} /></Pressable></View>
-        {twoPlayer && <View style={styles.scorecardTabs}><Pressable onPress={() => setViewingPlayer(1)} style={[styles.scorecardTab, viewingPlayer === 1 && styles.scorecardTabActive]}><Text style={viewingPlayer === 1 ? styles.playerOneText : styles.muted}>Player 1</Text></Pressable><Pressable onPress={() => setViewingPlayer(2)} style={[styles.scorecardTab, viewingPlayer === 2 && styles.scorecardTabActive]}><Text style={viewingPlayer === 2 ? styles.playerTwoText : styles.muted}>Player 2</Text></Pressable></View>}
+        <View style={styles.sheetHandle} /><View style={styles.sheetHeader}><View><Text style={styles.sheetTitle}>Scorecard</Text><Text style={styles.sheetSubtitle}>{twoPlayer ? computerOpponent ? viewingPlayer === 1 ? 'You' : 'Computer' : `Player ${viewingPlayer}` : 'Single Player'} · Round {Math.min(histories[viewingPlayer].length + 1, categories.length)} of {categories.length}</Text></View><Pressable accessibilityLabel="Close scorecard" onPress={() => setShowScorecard(false)} style={styles.sheetClose}><Ionicons name="close" size={23} color={colors.white} /></Pressable></View>
+        {twoPlayer && <View style={styles.scorecardTabs}><Pressable onPress={() => setViewingPlayer(1)} style={[styles.scorecardTab, viewingPlayer === 1 && styles.scorecardTabActive]}><Text style={viewingPlayer === 1 ? styles.playerOneText : styles.muted}>{computerOpponent ? 'You' : 'Player 1'}</Text></Pressable><Pressable onPress={() => setViewingPlayer(2)} style={[styles.scorecardTab, viewingPlayer === 2 && styles.scorecardTabActive]}><Text style={viewingPlayer === 2 ? styles.playerTwoText : styles.muted}>{computerOpponent ? 'Computer' : 'Player 2'}</Text></Pressable></View>}
         <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.sheetContent}>{scorecardContent(viewingPlayer)}</ScrollView>
       </SafeAreaView></View>
     </Modal>
@@ -319,8 +401,8 @@ const styles = StyleSheet.create({
   gameContainer: { flex: 1 }, content: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 48 }, contentWithLock: { paddingBottom: 105 },
   toast: { position: 'absolute', zIndex: 20, top: 10, left: 24, right: 24, minHeight: 52, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.yellow, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: colors.yellow, shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 12 }, toastText: { color: colors.background, fontWeight: '900', textAlign: 'center', flexShrink: 1 },
   turnControls: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, backgroundColor: colors.background, borderBottomColor: '#253438', borderBottomWidth: 1 },
-  modePicker: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 10, padding: 3 }, mode: { flex: 1, paddingVertical: 6, alignItems: 'center', borderRadius: 7 }, modeActive: { backgroundColor: colors.cyan }, modeText: { color: colors.muted, fontWeight: '800', fontSize: 12 }, modeTextActive: { color: colors.background },
-  turnHeadingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 9 }, title: { color: colors.yellow, fontSize: 21, fontWeight: '900' }, playerTwo: { color: colors.pink }, progress: { color: colors.muted, fontSize: 12, marginTop: 1 },
+  modePicker: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 10, padding: 3, gap: 2 }, mode: { flex: 1, paddingVertical: 6, alignItems: 'center', borderRadius: 7 }, modeActive: { backgroundColor: colors.cyan }, modeText: { color: colors.muted, fontWeight: '800', fontSize: 10.5 }, modeTextActive: { color: colors.background },
+  turnHeadingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 9 }, title: { color: colors.yellow, fontSize: 21, fontWeight: '900' }, playerTwo: { color: colors.pink }, progress: { color: colors.muted, fontSize: 12, marginTop: 1 }, computerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#34202f', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5 }, computerBadgeText: { color: colors.pink, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
   diceRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingTop: 10, paddingBottom: 4 }, dieSlot: { width: 50, height: 50 }, heldDieSlot: { transform: [{ translateY: -4 }] }, die: { flex: 1, backgroundColor: colors.cyan, borderRadius: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.35, shadowRadius: 6 }, heldDie: { backgroundColor: colors.yellow, borderColor: colors.pink, shadowColor: colors.yellow, shadowOpacity: 0.85, shadowRadius: 10 }, diePressed: { opacity: 0.78, transform: [{ scale: 0.94 }] },
   pipGrid: { width: 33, height: 33, flexDirection: 'row', flexWrap: 'wrap' }, pipCell: { width: 11, height: 11, alignItems: 'center', justifyContent: 'center' }, pip: { width: 6.5, height: 6.5, borderRadius: 3.25, backgroundColor: colors.background }, smallPipGrid: { width: 18, height: 18, flexDirection: 'row', flexWrap: 'wrap' }, smallPipCell: { width: 6, height: 6, alignItems: 'center', justifyContent: 'center' }, smallPip: { width: 3.5, height: 3.5, borderRadius: 2, backgroundColor: colors.background }, holdBadge: { position: 'absolute', bottom: -6, backgroundColor: colors.pink, borderRadius: 5, paddingHorizontal: 4, paddingVertical: 1 }, holdBadgeText: { color: colors.white, fontSize: 7, fontWeight: '900' },
   rollMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }, help: { color: colors.pink, textTransform: 'uppercase', fontWeight: '800', fontSize: 11 }, rollDots: { flexDirection: 'row', gap: 5 }, rollDot: { width: 8, height: 8, borderRadius: 4, borderColor: colors.muted, borderWidth: 1 }, rollDotAvailable: { backgroundColor: colors.cyan, borderColor: colors.cyan },
