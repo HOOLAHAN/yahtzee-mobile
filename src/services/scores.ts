@@ -1,4 +1,5 @@
 import { generateClient } from 'aws-amplify/api';
+import { fetchAuthSession } from 'aws-amplify/auth';
 
 export interface LeaderboardScore {
   id: string;
@@ -21,6 +22,14 @@ const listScores = `
 const submitScoreMutation = `
   mutation SubmitScore($score: Int!) {
     submitScore(score: $score) { id userId username score timestamp }
+  }
+`;
+
+const verifySubmittedScore = `
+  query VerifySubmittedScore {
+    listScores(limit: 100) {
+      items { id userId username score timestamp }
+    }
   }
 `;
 
@@ -52,12 +61,45 @@ export async function fetchUserScores(userId: string) {
     .slice(0, 10);
 }
 
-export async function submitScore(score: number) {
-  const result = await client.graphql({
-    query: submitScoreMutation,
-    authMode: 'userPool',
-    variables: { score },
-  });
-  if (!('data' in result)) throw new Error('Unable to submit score.');
-  return result.data.submitScore;
+const describeError = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'object' && error !== null) {
+    const candidate = error as { errors?: { message?: string }[]; message?: string };
+    return candidate.errors?.map((item) => item.message).filter(Boolean).join(', ') || candidate.message || JSON.stringify(error);
+  }
+  return String(error);
+};
+
+export async function submitScore(score: number, userId: string) {
+  const startedAt = Date.now();
+  try {
+    const session = await fetchAuthSession({ forceRefresh: true });
+    if (!session.tokens?.idToken) throw new Error('Your sign-in session has expired. Please sign out and sign in again.');
+
+    console.info('[scores.submit] Sending authenticated score', { score, userId, tokenExpiresAt: session.tokens.idToken.payload.exp });
+    const result = await client.graphql({ query: submitScoreMutation, authMode: 'userPool', authToken: session.tokens.idToken.toString(), variables: { score } });
+    if (!('data' in result) || !result.data.submitScore) throw new Error('AppSync returned no score after submission.');
+    console.info('[scores.submit] Score accepted', { id: result.data.submitScore.id, score: result.data.submitScore.score });
+    return result.data.submitScore;
+  } catch (error) {
+    const message = describeError(error);
+    console.error('[scores.submit] Authenticated mutation failed', { message, score, userId, error });
+
+    // A mobile connection can drop after DynamoDB commits but before AppSync's
+    // response reaches the client. Verify that ambiguous outcome before showing
+    // a failure or allowing a retry that could create a duplicate score.
+    try {
+      const verification = await client.graphql({ query: verifySubmittedScore, authMode: 'apiKey' });
+      const recentScores = 'data' in verification ? verification.data.listScores.items.filter(Boolean) as LeaderboardScore[] : [];
+      const committed = recentScores.find((item) => item.userId === userId && item.score === score && Date.parse(item.timestamp) >= startedAt - 15_000);
+      if (committed) {
+        console.warn('[scores.submit] Response failed, but the committed score was verified', { id: committed.id, score });
+        return committed;
+      }
+    } catch (verificationError) {
+      console.error('[scores.submit] Commit verification failed', { message: describeError(verificationError), verificationError });
+    }
+
+    throw new Error(message || 'Unable to submit score.');
+  }
 }
