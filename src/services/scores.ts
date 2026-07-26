@@ -36,6 +36,22 @@ export async function fetchLeaderboard() {
     .slice(0, 10);
 }
 
+export async function fetchUserScores(userId: string) {
+  const result = await client.graphql({
+    query: `query UserScores($userId: String!, $limit: Int) {
+      listScores(filter: { userId: { eq: $userId } }, limit: $limit) {
+        items { id userId username score timestamp }
+      }
+    }`,
+    authMode: 'apiKey',
+    variables: { userId, limit: 100 },
+  });
+  if (!('data' in result)) throw new Error('Unable to load your scores.');
+  return (result.data.listScores.items.filter(Boolean) as LeaderboardScore[])
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 10);
+}
+
 export async function submitScore(input: Omit<LeaderboardScore, 'id'>) {
   const id = `mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
   const result = await client.graphql({

@@ -10,6 +10,7 @@ export type DieFace = 1 | 2 | 3 | 4 | 5 | 6;
 export interface ScoreEntry {
   category: Category;
   score: number;
+  dice: DieFace[];
 }
 
 export const rollDie = (): DieFace => (Math.floor(Math.random() * 6) + 1) as DieFace;
@@ -51,3 +52,6 @@ export const scoreCategory = (category: Category, dice: DieFace[]) => {
     default: return 0;
   }
 };
+
+export const maximumAvailableScore = (dice: DieFace[], used: Set<Category>) =>
+  Math.max(...categories.filter((category) => !used.has(category)).map((category) => scoreCategory(category, dice)), 0);

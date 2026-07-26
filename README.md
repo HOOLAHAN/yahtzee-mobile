@@ -4,11 +4,15 @@ Expo and React Native companion to the Yahtzee website. The two apps use the sam
 
 ## Included
 
-- Native single-player Yahtzee gameplay with held dice and haptic feedback
+- Native single-player and pass-and-play two-player modes
+- Held dice, scoring previews, current-score hints, and haptic feedback
 - All 13 scoring categories
-- Shared leaderboard with pull-to-refresh
-- Existing Cognito account sign-in and sign-out
+- Dice-score breakdown and round-by-round scorecards
+- Native scorecard sharing and reset controls
+- Shared global and personal leaderboards with pull-to-refresh
+- Existing Cognito sign-in, registration, email confirmation, and password reset
 - Score submission for signed-in users
+- Built-in rules and scoring guide
 - Expo configuration for iOS and Android
 
 ## Local setup
@@ -35,7 +39,5 @@ No Lambda function is required for the current feature set: AppSync resolves sco
 
 ## Next releases
 
-- In-app email confirmation and password reset
 - Secure Cognito-authorized score submission
-- Two-player mode and scorecard sharing
 - EAS Build profiles, icons, splash screen, and store metadata
