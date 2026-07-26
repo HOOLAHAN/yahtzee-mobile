@@ -35,7 +35,7 @@ export default function App() {
         </View>
         <View style={styles.tabBar}>
           {tabs.map((item) => (
-            <Pressable key={item.key} onPress={() => setTab(item.key)} style={styles.tab}>
+            <Pressable key={item.key} onPress={() => setTab(item.key)} style={[styles.tab, tab === item.key && styles.activeTabPill]}>
               <Ionicons name={tab === item.key ? item.activeIcon : item.icon} size={23} color={tab === item.key ? colors.cyan : colors.muted} />
               <Text style={[styles.tabLabel, tab === item.key && styles.activeTab]}>{item.label}</Text>
             </Pressable>
@@ -52,8 +52,25 @@ const styles = StyleSheet.create({
   logoImage: { width: 43, height: 43, resizeMode: 'contain' }, logoSpacer: { width: 43 },
   logo: { color: colors.yellow, fontSize: 28, fontWeight: '900' },
   screen: { flex: 1 },
-  tabBar: { flexDirection: 'row', minHeight: 70, borderTopColor: '#253237', borderTopWidth: 1, backgroundColor: colors.surface },
-  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
+  tabBar: {
+    flexDirection: 'row',
+    height: 68,
+    marginHorizontal: 14,
+    marginTop: 5,
+    marginBottom: 8,
+    padding: 5,
+    borderRadius: 34,
+    borderColor: '#2d3c40',
+    borderWidth: 1,
+    backgroundColor: '#121a1d',
+    shadowColor: colors.cyan,
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 10,
+  },
+  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, borderRadius: 27 },
+  activeTabPill: { backgroundColor: '#20383b', borderColor: '#315a5e', borderWidth: 1 },
   tabLabel: { color: colors.muted, fontWeight: '700', fontSize: 12 },
   activeTab: { color: colors.cyan },
 });
