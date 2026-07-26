@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { useAuth } from '../state/AuthContext';
@@ -16,6 +16,8 @@ export function AccountScreen() {
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [oldPassword, setOldPassword] = useState(''); const [newPassword, setNewPassword] = useState('');
   const [managementError, setManagementError] = useState(''); const [managementBusy, setManagementBusy] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
 
   const changePassword = async () => {
     if (!oldPassword || !newPassword) return setManagementError('Enter your current and new passwords.');
@@ -28,17 +30,26 @@ export function AccountScreen() {
     finally { setManagementBusy(false); }
   };
 
-  const confirmDelete = () => Alert.alert(
-    'Delete account?',
-    'This permanently removes your Cognito account and cannot be undone.',
+  const confirmSignOut = () => Alert.alert(
+    'Sign out?',
+    'You will need to enter your email and password to sign in again.',
     [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete Account', style: 'destructive', onPress: () => {
-        setManagementBusy(true); setManagementError('');
-        void auth.deleteAccount().catch((caught) => setManagementError(caught instanceof Error ? caught.message : 'Unable to delete account.')).finally(() => setManagementBusy(false));
-      } },
+      { text: 'Stay signed in', style: 'cancel' },
+      { text: 'Sign Out', style: 'destructive', onPress: () => void auth.logout() },
     ],
   );
+
+  const deleteAccount = async () => {
+    if (deleteConfirmation !== 'DELETE') return;
+    setManagementBusy(true); setManagementError('');
+    try {
+      await auth.deleteAccount();
+      setShowDeleteConfirmation(false); setDeleteConfirmation('');
+    } catch (caught) {
+      setManagementError(caught instanceof Error ? caught.message : 'Unable to delete account.');
+      setShowDeleteConfirmation(false);
+    } finally { setManagementBusy(false); }
+  };
 
   if (auth.loading) return <ActivityIndicator style={styles.loader} color={colors.cyan} size="large" />;
   if (auth.user) return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
@@ -61,7 +72,7 @@ export function AccountScreen() {
         <Ionicons name={showPasswordChange ? 'chevron-up' : 'chevron-forward'} size={20} color={colors.muted} />
       </Pressable>
       <View style={styles.divider} />
-      <Pressable onPress={() => void auth.logout()} style={styles.actionRow}>
+      <Pressable onPress={confirmSignOut} style={styles.actionRow}>
         <View style={styles.actionIcon}><Ionicons name="log-out-outline" size={21} color={colors.pink} /></View>
         <View style={styles.actionCopy}><Text style={styles.actionTitle}>Sign out</Text><Text style={styles.actionDescription}>Sign out on this device</Text></View>
         <Ionicons name="chevron-forward" size={20} color={colors.muted} />
@@ -74,11 +85,26 @@ export function AccountScreen() {
     </View>}
     {managementError ? <Text style={styles.error}>{managementError}</Text> : null}
     <Text style={[styles.sectionTitle, styles.dangerTitle]}>Danger zone</Text>
-    <Pressable disabled={managementBusy} onPress={confirmDelete} style={styles.deleteButton}>
+    <Pressable disabled={managementBusy} onPress={() => { setDeleteConfirmation(''); setShowDeleteConfirmation(true); }} style={styles.deleteButton}>
       <Ionicons name="trash-outline" size={21} color={colors.danger} />
       <View style={styles.actionCopy}><Text style={styles.deleteText}>Delete account</Text><Text style={styles.actionDescription}>Permanently remove your account</Text></View>
       <Ionicons name="chevron-forward" size={20} color={colors.danger} />
     </Pressable>
+    <Modal transparent animationType="fade" visible={showDeleteConfirmation} onRequestClose={() => setShowDeleteConfirmation(false)}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalIcon}><Ionicons name="warning-outline" size={28} color={colors.danger} /></View>
+          <Text style={styles.modalTitle}>Delete account?</Text>
+          <Text style={styles.modalCopy}>This permanently removes your Cognito account from both the app and website. This cannot be undone.</Text>
+          <Text style={styles.confirmationLabel}>Type DELETE to confirm</Text>
+          <TextInput value={deleteConfirmation} onChangeText={(value) => setDeleteConfirmation(value.toUpperCase())} placeholder="DELETE" placeholderTextColor={colors.muted} autoCapitalize="characters" autoCorrect={false} style={[styles.input, styles.confirmationInput]} />
+          <View style={styles.modalActions}>
+            <Pressable disabled={managementBusy} onPress={() => { setShowDeleteConfirmation(false); setDeleteConfirmation(''); }} style={styles.cancelButton}><Text style={styles.cancelText}>Cancel</Text></Pressable>
+            <Pressable disabled={managementBusy || deleteConfirmation !== 'DELETE'} onPress={() => void deleteAccount()} style={[styles.confirmDeleteButton, deleteConfirmation !== 'DELETE' && styles.disabledButton]}><Text style={styles.confirmDeleteText}>{managementBusy ? 'Deleting…' : 'Delete forever'}</Text></Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   </ScrollView>;
 
   const submit = async () => {
@@ -126,4 +152,5 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.cyan, fontSize: 19, fontWeight: '900', marginBottom: 5 }, sectionDescription: { color: colors.mint, lineHeight: 20, marginBottom: 13 },
   actionGroup: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 16, overflow: 'hidden' }, actionRow: { flexDirection: 'row', alignItems: 'center', padding: 15 }, actionIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: '#182326', alignItems: 'center', justifyContent: 'center', marginRight: 12 }, actionCopy: { flex: 1 }, actionTitle: { color: colors.white, fontSize: 16, fontWeight: '800' }, actionDescription: { color: colors.muted, fontSize: 12, marginTop: 3 }, divider: { height: 1, backgroundColor: '#263337', marginLeft: 65 },
   managementPanel: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 14, padding: 13, marginTop: 10 }, dangerTitle: { color: colors.danger, marginTop: 27 }, deleteButton: { flexDirection: 'row', alignItems: 'center', borderColor: colors.danger, borderWidth: 1, borderRadius: 14, padding: 15 }, deleteText: { color: colors.danger, fontWeight: '900', fontSize: 15, marginLeft: 12 },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.78)', alignItems: 'center', justifyContent: 'center', padding: 24 }, modalCard: { width: '100%', maxWidth: 420, backgroundColor: colors.surface, borderColor: colors.danger, borderWidth: 1, borderRadius: 20, padding: 20 }, modalIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#321b20', alignItems: 'center', justifyContent: 'center', alignSelf: 'center' }, modalTitle: { color: colors.danger, fontSize: 23, fontWeight: '900', textAlign: 'center', marginTop: 12 }, modalCopy: { color: colors.mint, textAlign: 'center', lineHeight: 21, marginTop: 9 }, confirmationLabel: { color: colors.white, fontWeight: '800', marginTop: 20, marginBottom: 8 }, confirmationInput: { borderColor: colors.danger, textAlign: 'center', letterSpacing: 3, fontWeight: '900' }, modalActions: { flexDirection: 'row', gap: 10, marginTop: 5 }, cancelButton: { flex: 1, borderColor: '#405055', borderWidth: 1, borderRadius: 12, padding: 13, alignItems: 'center' }, cancelText: { color: colors.white, fontWeight: '800' }, confirmDeleteButton: { flex: 1.35, backgroundColor: colors.danger, borderRadius: 12, padding: 13, alignItems: 'center' }, confirmDeleteText: { color: colors.background, fontWeight: '900' }, disabledButton: { opacity: 0.35 },
 });
