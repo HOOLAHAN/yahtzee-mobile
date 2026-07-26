@@ -22,6 +22,7 @@ import {
 import { submitScore } from '../services/scores';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
+import { RealDiceScreen } from './RealDiceScreen';
 
 const initialDice: DieFace[] = [1, 1, 1, 1, 1];
 const storageKey = 'yahtzee.active-game.v1';
@@ -35,10 +36,12 @@ const categoryLabels: Record<Category, string> = {
 };
 type Player = 1 | 2;
 type Histories = Record<Player, ScoreEntry[]>;
+type GameMode = 'solo' | 'computer' | 'pass' | 'real';
 
 interface PersistedGame {
   twoPlayer: boolean;
   computerOpponent?: boolean;
+  scorekeeperMode?: boolean;
   currentPlayer: Player;
   dice: DieFace[];
   held: number[];
@@ -51,6 +54,14 @@ interface PersistedGame {
 
 function PipFace({ value, small = false }: { value: DieFace; small?: boolean }) {
   return <View style={small ? styles.smallPipGrid : styles.pipGrid}>{Array.from({ length: 9 }, (_, cell) => <View key={cell} style={small ? styles.smallPipCell : styles.pipCell}>{pipCells[value].includes(cell) && <View style={small ? styles.smallPip : styles.pip} />}</View>)}</View>;
+}
+
+function GameModePicker({ active, onChange }: { active: GameMode; onChange: (mode: GameMode) => void }) {
+  const options: { mode: GameMode; label: string }[] = [
+    { mode: 'solo', label: 'Solo' }, { mode: 'computer', label: 'Computer' },
+    { mode: 'pass', label: 'Pass & Play' }, { mode: 'real', label: 'Real Dice' },
+  ];
+  return <View style={styles.modePicker}>{options.map((option) => <Pressable key={option.mode} accessibilityRole="button" accessibilityState={{ selected: active === option.mode }} onPress={() => onChange(option.mode)} style={[styles.mode, active === option.mode && styles.modeActive]}><Text style={[styles.modeText, active === option.mode && styles.modeTextActive]}>{option.label}</Text></Pressable>)}</View>;
 }
 
 function AnimatedDie({ value, index, held, rollToken, canHold, reduceMotion, onPress }: {
@@ -171,6 +182,7 @@ export function GameScreen() {
   const { user } = useAuth();
   const [twoPlayer, setTwoPlayer] = useState(false);
   const [computerOpponent, setComputerOpponent] = useState(false);
+  const [scorekeeperMode, setScorekeeperMode] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState<Player>(1);
   const [viewingPlayer, setViewingPlayer] = useState<Player>(1);
   const [dice, setDice] = useState<DieFace[]>(initialDice);
@@ -213,7 +225,7 @@ export function GameScreen() {
       if (!value) return;
       const saved = JSON.parse(value) as PersistedGame;
       if (!Array.isArray(saved.dice) || saved.dice.length !== 5 || !saved.histories) return;
-      setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
+      setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setScorekeeperMode(Boolean(saved.scorekeeperMode)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
       setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories(saved.histories); setSubmitted(Boolean(saved.submitted));
       if (saved.gameId) setGameId(saved.gameId);
     }).catch(() => undefined).finally(() => setHydrated(true));
@@ -221,9 +233,9 @@ export function GameScreen() {
 
   useEffect(() => {
     if (!hydrated) return;
-    const state: PersistedGame = { twoPlayer, computerOpponent, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, gameId };
+    const state: PersistedGame = { twoPlayer, computerOpponent, scorekeeperMode, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, gameId };
     void AsyncStorage.setItem(storageKey, JSON.stringify(state));
-  }, [computerOpponent, currentPlayer, dice, gameId, hasRolled, held, histories, hydrated, rollsLeft, submitted, twoPlayer]);
+  }, [computerOpponent, currentPlayer, dice, gameId, hasRolled, held, histories, hydrated, rollsLeft, scorekeeperMode, submitted, twoPlayer]);
 
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -325,9 +337,9 @@ export function GameScreen() {
     { text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: clearGame },
   ]);
 
-  const applyMode = (mode: 'solo' | 'pass' | 'computer') => { setTwoPlayer(mode !== 'solo'); setComputerOpponent(mode === 'computer'); clearGame(); };
-  const changeMode = (mode: 'solo' | 'pass' | 'computer') => {
-    const activeMode = computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
+  const applyMode = (mode: GameMode) => { setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); clearGame(); };
+  const changeMode = (mode: GameMode) => {
+    const activeMode = scorekeeperMode ? 'real' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
     if (mode === activeMode) return;
     if (histories[1].length || histories[2].length) Alert.alert('Start a new game?', 'Changing mode resets the current scorecard.', [
       { text: 'Cancel', style: 'cancel' }, { text: 'Change Mode', style: 'destructive', onPress: () => applyMode(mode) },
@@ -388,15 +400,14 @@ export function GameScreen() {
     <View style={styles.sheetTotalRow}><Text style={styles.sheetTotalLabel}>Total score</Text><Text style={styles.sheetTotal}>{totals[player]}</Text></View>
   </>;
 
+  const activeMode: GameMode = scorekeeperMode ? 'real' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
+  if (scorekeeperMode) return <View style={styles.gameContainer}><View style={styles.scorekeeperModeBar}><GameModePicker active={activeMode} onChange={changeMode} /></View><RealDiceScreen /></View>;
+
   return <View style={styles.gameContainer}>
     <Animated.View accessibilityLiveRegion="polite" pointerEvents="none" style={[styles.toast, { opacity: toastOpacity, transform: [{ translateY: toastY }] }]}><Ionicons name="checkmark-circle" size={22} color={colors.background} /><Text style={styles.toastText}>{toastMessage}</Text></Animated.View>
 
     <View style={styles.turnControls}>
-      <View style={styles.modePicker}>
-        <Pressable accessibilityRole="button" accessibilityState={{ selected: !twoPlayer }} onPress={() => changeMode('solo')} style={[styles.mode, !twoPlayer && styles.modeActive]}><Text style={[styles.modeText, !twoPlayer && styles.modeTextActive]}>Solo</Text></Pressable>
-        <Pressable accessibilityRole="button" accessibilityState={{ selected: computerOpponent }} onPress={() => changeMode('computer')} style={[styles.mode, computerOpponent && styles.modeActive]}><Text style={[styles.modeText, computerOpponent && styles.modeTextActive]}>Vs Computer</Text></Pressable>
-        <Pressable accessibilityRole="button" accessibilityState={{ selected: twoPlayer && !computerOpponent }} onPress={() => changeMode('pass')} style={[styles.mode, twoPlayer && !computerOpponent && styles.modeActive]}><Text style={[styles.modeText, twoPlayer && !computerOpponent && styles.modeTextActive]}>Pass & Play</Text></Pressable>
-      </View>
+      <GameModePicker active={activeMode} onChange={changeMode} />
       <View style={styles.turnHeadingRow}><View><Text style={[styles.title, currentPlayer === 2 && styles.playerTwo]}>{isComputerTurn ? "Computer's turn" : computerOpponent ? 'Your turn' : twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={styles.computerBadge}><Ionicons name="hardware-chip-outline" size={13} color={colors.pink} /><Text style={styles.computerBadgeText}>Thinking</Text></View>}</View>
       <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} onPress={() => toggleHeld(index)} />)}</View>
       <View style={styles.rollMeta}><Text style={styles.help}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && styles.rollDotAvailable]} />)}</View></View>
@@ -440,7 +451,7 @@ const styles = StyleSheet.create({
   gameContainer: { flex: 1 }, content: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 48 }, contentWithLock: { paddingBottom: 105 },
   toast: { position: 'absolute', zIndex: 20, top: 10, left: 24, right: 24, minHeight: 52, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.yellow, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: colors.yellow, shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 12 }, toastText: { color: colors.background, fontWeight: '900', textAlign: 'center', flexShrink: 1 },
   turnControls: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, backgroundColor: colors.background, borderBottomColor: '#253438', borderBottomWidth: 1 },
-  modePicker: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 10, padding: 3, gap: 2 }, mode: { flex: 1, paddingVertical: 6, alignItems: 'center', borderRadius: 7 }, modeActive: { backgroundColor: colors.cyan }, modeText: { color: colors.muted, fontWeight: '800', fontSize: 10.5 }, modeTextActive: { color: colors.background },
+  scorekeeperModeBar: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 6, borderBottomColor: '#253438', borderBottomWidth: 1 }, modePicker: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 10, padding: 3, gap: 2 }, mode: { flex: 1, minHeight: 31, paddingHorizontal: 2, alignItems: 'center', justifyContent: 'center', borderRadius: 7 }, modeActive: { backgroundColor: colors.cyan }, modeText: { color: colors.muted, fontWeight: '800', fontSize: 9.5, textAlign: 'center' }, modeTextActive: { color: colors.background },
   turnHeadingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 9 }, title: { color: colors.yellow, fontSize: 21, fontWeight: '900' }, playerTwo: { color: colors.pink }, progress: { color: colors.muted, fontSize: 12, marginTop: 1 }, computerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#34202f', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5 }, computerBadgeText: { color: colors.pink, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
   diceRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingTop: 10, paddingBottom: 4 }, dieSlot: { width: 50, height: 50 }, heldDieSlot: { transform: [{ translateY: -4 }] }, die: { flex: 1, backgroundColor: colors.cyan, borderRadius: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.35, shadowRadius: 6 }, heldDie: { backgroundColor: colors.yellow, borderColor: colors.pink, shadowColor: colors.yellow, shadowOpacity: 0.85, shadowRadius: 10 }, diePressed: { opacity: 0.78, transform: [{ scale: 0.94 }] },
   pipGrid: { width: 33, height: 33, flexDirection: 'row', flexWrap: 'wrap' }, pipCell: { width: 11, height: 11, alignItems: 'center', justifyContent: 'center' }, pip: { width: 6.5, height: 6.5, borderRadius: 3.25, backgroundColor: colors.background }, smallPipGrid: { width: 18, height: 18, flexDirection: 'row', flexWrap: 'wrap' }, smallPipCell: { width: 6, height: 6, alignItems: 'center', justifyContent: 'center' }, smallPip: { width: 3.5, height: 3.5, borderRadius: 2, backgroundColor: colors.background }, holdBadge: { position: 'absolute', bottom: -6, backgroundColor: colors.pink, borderRadius: 5, paddingHorizontal: 4, paddingVertical: 1 }, holdBadgeText: { color: colors.white, fontSize: 7, fontWeight: '900' },
