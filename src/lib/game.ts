@@ -6,6 +6,9 @@ export const categories = [
 
 export type Category = typeof categories[number];
 export type DieFace = 1 | 2 | 3 | 4 | 5 | 6;
+export const upperCategories = categories.slice(0, 6) as readonly Category[];
+export const upperBonusThreshold = 63;
+export const upperBonusPoints = 35;
 
 export interface ScoreEntry {
   category: Category;
@@ -55,3 +58,43 @@ export const scoreCategory = (category: Category, dice: DieFace[]) => {
 
 export const maximumAvailableScore = (dice: DieFace[], used: Set<Category>) =>
   Math.max(...categories.filter((category) => !used.has(category)).map((category) => scoreCategory(category, dice)), 0);
+
+const categoryMaximums: Record<Category, number> = {
+  Ones: 5,
+  Twos: 10,
+  Threes: 15,
+  Fours: 20,
+  Fives: 25,
+  Sixes: 30,
+  'Three of a Kind': 30,
+  'Four of a Kind': 30,
+  'Full House': 25,
+  'Small Straight': 30,
+  'Large Straight': 40,
+  Yahtzee: 50,
+  Chance: 30,
+};
+
+export const categoryRecommendationValue = (category: Category, dice: DieFace[]) => {
+  const score = scoreCategory(category, dice);
+  if (score === 0) return -1;
+
+  // Completed fixed combinations are excellent locks. Number categories are
+  // measured by how many matching dice were secured, not just raw points.
+  if (category === 'Full House' || category === 'Small Straight' || category === 'Large Straight' || category === 'Yahtzee') return 1;
+  if (upperCategories.includes(category)) return score / categoryMaximums[category];
+
+  // Preserve flexible lower-section categories unless the roll fills them well.
+  const opportunityCost = category === 'Chance' ? 0.5 : category === 'Four of a Kind' ? 0.8 : 0.72;
+  return (score / categoryMaximums[category]) * opportunityCost;
+};
+
+export const upperSectionSubtotal = (entries: ScoreEntry[]) => entries
+  .filter((entry) => upperCategories.includes(entry.category))
+  .reduce((total, entry) => total + entry.score, 0);
+
+export const upperSectionBonus = (entries: ScoreEntry[]) =>
+  upperSectionSubtotal(entries) >= upperBonusThreshold ? upperBonusPoints : 0;
+
+export const totalScore = (entries: ScoreEntry[]) =>
+  entries.reduce((total, entry) => total + entry.score, 0) + upperSectionBonus(entries);
