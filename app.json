@@ -1,15 +1,18 @@
 {
   "expo": {
-    "name": "yahtzee-mobile",
+    "name": "Yahtzee!",
     "slug": "yahtzee-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "scheme": "yahtzee",
+    "userInterfaceStyle": "dark",
     "ios": {
+      "bundleIdentifier": "com.iainhoolahan.yahtzee",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.iainhoolahan.yahtzee",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

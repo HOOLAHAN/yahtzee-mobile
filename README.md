@@ -1,0 +1,41 @@
+# Yahtzee Mobile
+
+Expo and React Native companion to the Yahtzee website. The two apps use the same AWS Cognito users, AppSync GraphQL API, and DynamoDB leaderboard.
+
+## Included
+
+- Native single-player Yahtzee gameplay with held dice and haptic feedback
+- All 13 scoring categories
+- Shared leaderboard with pull-to-refresh
+- Existing Cognito account sign-in and sign-out
+- Score submission for signed-in users
+- Expo configuration for iOS and Android
+
+## Local setup
+
+1. Copy `.env.example` to `.env.local` and fill in the existing AWS resource values.
+2. Install dependencies with `npm install`.
+3. Start Expo with `npm start`.
+4. Scan the QR code using Expo Go, or press `i` for the iOS simulator / `a` for Android.
+
+All `EXPO_PUBLIC_*` variables are embedded into the application bundle. The current AppSync API key is therefore public, just as it is in the website. Do not put AWS IAM access keys or other private credentials in these variables.
+
+## Commands
+
+```bash
+npm start
+npm run ios
+npm run android
+npm run typecheck
+```
+
+## Backend
+
+No Lambda function is required for the current feature set: AppSync resolves score operations directly against DynamoDB. Before public release, update the AppSync schema so leaderboard reads can remain public while score creation requires Cognito user-pool authentication.
+
+## Next releases
+
+- In-app email confirmation and password reset
+- Secure Cognito-authorized score submission
+- Two-player mode and scorecard sharing
+- EAS Build profiles, icons, splash screen, and store metadata
