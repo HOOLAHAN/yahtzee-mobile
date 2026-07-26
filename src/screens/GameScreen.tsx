@@ -104,28 +104,67 @@ function computerHeldDice(dice: DieFace[], used: Set<Category>) {
   const grouped = [...counts.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0]);
   const [bestFace, bestCount] = grouped[0];
   const matchingUpper = categories[bestFace - 1];
-  const combinationOpen = ['Three of a Kind', 'Four of a Kind', 'Full House', 'Yahtzee'].some((category) => !used.has(category as Category));
-
-  if (bestCount >= 2 && (combinationOpen || !used.has(matchingUpper))) {
-    return new Set(dice.map((die, index) => die === bestFace ? index : -1).filter((index) => index >= 0));
-  }
-
   const straightOpen = !used.has('Small Straight') || !used.has('Large Straight');
-  if (straightOpen) {
-    const runs: DieFace[][] = [[1, 2, 3, 4, 5], [2, 3, 4, 5, 6]];
-    const target = runs.sort((a, b) => b.filter((face) => dice.includes(face)).length - a.filter((face) => dice.includes(face)).length)[0];
+  const runs: DieFace[][] = [[1, 2, 3, 4, 5], [2, 3, 4, 5, 6]];
+  const target = runs.reduce((best, run) => run.filter((face) => dice.includes(face)).length > best.filter((face) => dice.includes(face)).length ? run : best);
+  const straightMatches = target.filter((face) => dice.includes(face)).length;
+  const groupOpen = !used.has(matchingUpper) || ['Three of a Kind', 'Four of a Kind', 'Yahtzee'].some((category) => !used.has(category as Category));
+  const fullHouseOpen = !used.has('Full House');
+  const holdFace = (face: DieFace) => new Set(dice.map((die, index) => die === face ? index : -1).filter((index) => index >= 0));
+  const holdStraight = () => {
     const seen = new Set<DieFace>();
     return new Set(dice.map((die, index) => target.includes(die) && !seen.has(die) ? (seen.add(die), index) : -1).filter((index) => index >= 0));
+  };
+
+  // Four matching dice are too valuable to abandon. A four-die straight is
+  // similarly one roll from the hardest straight result.
+  if (bestCount >= 4 && groupOpen) return holdFace(bestFace);
+  if (straightOpen && straightMatches >= 4) return holdStraight();
+
+  // Preserve a made full house, or both pairs when one die can complete it.
+  if (fullHouseOpen && grouped[0][1] >= 2 && grouped[1]?.[1] >= 2) {
+    const usefulFaces = new Set(grouped.filter(([, count]) => count >= 2).map(([face]) => face));
+    return new Set(dice.map((die, index) => usefulFaces.has(die) ? index : -1).filter((index) => index >= 0));
   }
 
+  if (bestCount >= 3 && groupOpen) return holdFace(bestFace);
+  if (straightOpen && straightMatches >= 3) return holdStraight();
+  if (bestCount >= 2 && (groupOpen || fullHouseOpen)) return holdFace(bestFace);
+  if (straightOpen && straightMatches >= 2) return holdStraight();
+
+  // With no live combination, retain high dice for Chance and the upper card.
   return new Set(dice.map((die, index) => die >= 5 ? index : -1).filter((index) => index >= 0));
 }
 
-function computerCategory(dice: DieFace[], used: Set<Category>) {
+const sacrificeCost: Record<Category, number> = {
+  Ones: 4, Twos: 8, Threes: 12, Fours: 16, Fives: 20, Sixes: 24,
+  'Three of a Kind': 28, 'Four of a Kind': 24, 'Full House': 22,
+  'Small Straight': 26, 'Large Straight': 32, Yahtzee: 18, Chance: 34,
+};
+
+function computerCategoryValue(category: Category, dice: DieFace[], entries: ScoreEntry[]) {
+  const score = scoreCategory(category, dice);
+  if (score === 0) return -sacrificeCost[category];
+
+  // Completed rare combinations should always beat their overlapping result:
+  // a large straight beats a small one, and Yahtzee beats its upper category.
+  if (category === 'Yahtzee') return 1200;
+  if (category === 'Large Straight') return 1000;
+  if (category === 'Full House') return 800;
+  if (category === 'Small Straight') return 700;
+  if (category === 'Four of a Kind') return 420 + score;
+  if (category === 'Three of a Kind') return 300 + score;
+  if (category === 'Chance') return 120 + score * 4;
+
+  const upperSubtotal = upperSectionSubtotal(entries);
+  const bonusStillPossible = upperSubtotal < upperBonusThreshold;
+  const matchingDice = score / (categories.indexOf(category) + 1);
+  return 180 + score * 5 + matchingDice * 12 + (bonusStillPossible && matchingDice >= 3 ? 35 : 0);
+}
+
+function computerCategory(dice: DieFace[], used: Set<Category>, entries: ScoreEntry[]) {
   const available = categories.filter((category) => !used.has(category));
-  const scoring = available.filter((category) => scoreCategory(category, dice) > 0);
-  if (scoring.length) return scoring.reduce((best, category) => categoryRecommendationValue(category, dice) > categoryRecommendationValue(best, dice) ? category : best);
-  return available.find((category) => upperCategories.includes(category)) ?? available[0];
+  return available.reduce((best, category) => computerCategoryValue(category, dice, entries) > computerCategoryValue(best, dice, entries) ? category : best);
 }
 
 export function GameScreen() {
@@ -227,7 +266,7 @@ export function GameScreen() {
         setDice([...computerDice]); setRollsLeft(remaining); setHasRolled(true); setRollToken((token) => token + 1);
         await pause(reduceMotion ? 180 : 650);
 
-        const strongCategory = computerCategory(computerDice, computerUsed);
+        const strongCategory = computerCategory(computerDice, computerUsed, histories[2]);
         if (['Large Straight', 'Full House', 'Yahtzee'].includes(strongCategory) && scoreCategory(strongCategory, computerDice) > 0) break;
         if (turnRoll < 2) {
           computerHeld = computerHeldDice(computerDice, computerUsed);
@@ -237,7 +276,7 @@ export function GameScreen() {
       }
 
       if (cancelled) return;
-      const category = computerCategory(computerDice, computerUsed);
+      const category = computerCategory(computerDice, computerUsed, histories[2]);
       const entry: ScoreEntry = { category, score: scoreCategory(category, computerDice), dice: [...computerDice] };
       setSelectedCategory(category);
       await pause(reduceMotion ? 220 : 800);
