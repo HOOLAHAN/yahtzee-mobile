@@ -64,8 +64,8 @@ function GameModePicker({ active, onChange }: { active: GameMode; onChange: (mod
   return <View style={styles.modePicker}>{options.map((option) => <Pressable key={option.mode} accessibilityRole="button" accessibilityState={{ selected: active === option.mode }} onPress={() => onChange(option.mode)} style={[styles.mode, active === option.mode && styles.modeActive]}><Text style={[styles.modeText, active === option.mode && styles.modeTextActive]}>{option.label}</Text></Pressable>)}</View>;
 }
 
-function AnimatedDie({ value, index, held, rollToken, canHold, reduceMotion, onPress }: {
-  value: DieFace; index: number; held: boolean; rollToken: number; canHold: boolean; reduceMotion: boolean; onPress: () => void;
+function AnimatedDie({ value, index, held, rollToken, canHold, reduceMotion, accentColor, heldColor, softColor, onPress }: {
+  value: DieFace; index: number; held: boolean; rollToken: number; canHold: boolean; reduceMotion: boolean; accentColor: string; heldColor: string; softColor: string; onPress: () => void;
 }) {
   const spin = useRef(new Animated.Value(0)).current;
   const lift = useRef(new Animated.Value(0)).current;
@@ -99,10 +99,10 @@ function AnimatedDie({ value, index, held, rollToken, canHold, reduceMotion, onP
       accessibilityState={{ disabled: !canHold, selected: held }}
       disabled={!canHold}
       onPress={onPress}
-      style={({ pressed }) => [styles.die, held && styles.heldDie, pressed && styles.diePressed]}
+      style={({ pressed }) => [styles.die, { backgroundColor: accentColor, borderColor: accentColor, shadowColor: accentColor }, held && styles.heldDie, held && { backgroundColor: heldColor, borderColor: accentColor, shadowColor: heldColor }, pressed && styles.diePressed]}
     >
       <PipFace value={value} />
-      {held && <View style={styles.holdBadge}><Text style={styles.holdBadgeText}>HELD</Text></View>}
+      {held && <View style={[styles.holdBadge, { backgroundColor: accentColor, borderColor: heldColor }]}><Text style={[styles.holdBadgeText, { color: softColor }]}>HELD</Text></View>}
     </Pressable>
   </Animated.View>;
 }
@@ -414,10 +414,10 @@ export function GameScreen() {
     <View style={styles.turnControls}>
       <GameModePicker active={activeMode} onChange={changeMode} />
       <View style={styles.turnHeadingRow}><View><Text style={[styles.title, { color: currentProfile.score }]}>{isComputerTurn ? "Computer's turn" : computerOpponent ? 'Your turn' : twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={[styles.computerBadge, { backgroundColor: computerProfile.soft }]}><Ionicons name="hardware-chip-outline" size={13} color={computerProfile.accent} /><Text style={[styles.computerBadgeText, { color: computerProfile.accent }]}>Thinking</Text></View>}</View>
-      <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} onPress={() => toggleHeld(index)} />)}</View>
-      <View style={styles.rollMeta}><Text style={styles.help}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && styles.rollDotAvailable]} />)}</View></View>
-      <Pressable accessibilityRole="button" accessibilityLabel={`Roll dice, ${rollsLeft} rolls remaining`} disabled={rollsLeft === 0 || complete || isComputerTurn} onPress={roll} style={({ pressed }) => [styles.primaryButton, (rollsLeft === 0 || complete || isComputerTurn) && styles.disabled, pressed && styles.pressed]}><View style={styles.buttonContent}><Ionicons name={isComputerTurn ? 'hardware-chip-outline' : 'dice'} size={22} color={colors.background} /><Text style={styles.primaryText}>{isComputerTurn ? 'Computer Playing' : hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></View></Pressable>
-      <View style={styles.compactSummary}><Text style={styles.compactLabel}>Best now <Text style={styles.compactValue}>{currentScore}</Text></Text><Text style={styles.compactLabel}>{isComputerTurn ? 'Computer' : 'Total'} <Text style={styles.compactValue}>{totals[currentPlayer]}</Text></Text>{twoPlayer && <Text style={styles.compactLabel}>{computerOpponent ? 'You' : `P${currentPlayer === 1 ? 2 : 1}`} <Text style={styles.compactValue}>{totals[currentPlayer === 1 ? 2 : 1]}</Text></Text>}</View>
+      <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} accentColor={currentProfile.accent} heldColor={currentProfile.score} softColor={colors.background} onPress={() => toggleHeld(index)} />)}</View>
+      <View style={styles.rollMeta}><Text style={[styles.help, { color: currentProfile.accent }]}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && { backgroundColor: currentProfile.accent, borderColor: currentProfile.accent }]} />)}</View></View>
+      <Pressable accessibilityRole="button" accessibilityLabel={`Roll dice, ${rollsLeft} rolls remaining`} disabled={rollsLeft === 0 || complete || isComputerTurn} onPress={roll} style={({ pressed }) => [styles.primaryButton, { backgroundColor: currentProfile.accent, shadowColor: currentProfile.accent }, (rollsLeft === 0 || complete || isComputerTurn) && styles.disabled, pressed && styles.pressed]}><View style={styles.buttonContent}><Ionicons name={isComputerTurn ? 'hardware-chip-outline' : 'dice'} size={22} color={colors.background} /><Text style={styles.primaryText}>{isComputerTurn ? 'Computer Playing' : hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></View></Pressable>
+      <View style={styles.compactSummary}><Text style={styles.compactLabel}>Best now <Text style={[styles.compactValue, { color: currentProfile.score }]}>{currentScore}</Text></Text><Text style={styles.compactLabel}>{isComputerTurn ? 'Computer' : 'Total'} <Text style={[styles.compactValue, { color: currentProfile.score }]}>{totals[currentPlayer]}</Text></Text>{twoPlayer && <Text style={styles.compactLabel}>{computerOpponent ? 'You' : `P${currentPlayer === 1 ? 2 : 1}`} <Text style={[styles.compactValue, { color: currentPlayer === 1 ? secondPlayerProfile.score : playerProfiles[0].score }]}>{totals[currentPlayer === 1 ? 2 : 1]}</Text></Text>}</View>
     </View>
 
     <ScrollView contentContainerStyle={[styles.content, selectedCategory && styles.contentWithLock]}>
@@ -433,7 +433,7 @@ export function GameScreen() {
           const entry = scores.find((item) => item.category === category); const preview = hasRolled ? scoreCategory(category, dice) : 0;
           const selected = selectedCategory === category; const recommended = recommendedCategory === category && !entry;
           return <Pressable accessibilityRole="button" accessibilityLabel={`${category}, ${entry ? `${entry.score} points, used` : `${preview} points`}${recommended ? ', best available score' : ''}`} accessibilityState={{ disabled: !hasRolled || Boolean(entry) || isComputerTurn, selected }} key={category} disabled={!hasRolled || Boolean(entry) || isComputerTurn} onPress={() => setSelectedCategory(category)} style={[styles.category, category === 'Chance' && styles.chanceCategory, entry && styles.usedCategory, recommended && !isComputerTurn && styles.recommendedCategory, selected && styles.selectedCategory]}>
-            <Text numberOfLines={2} style={[styles.categoryName, entry && styles.usedText]}>{categoryLabels[category]}</Text><View style={[styles.scoreBadge, entry && styles.usedBadge, preview === 0 && !entry && styles.zeroBadge]}><Text style={[styles.scoreBadgeText, entry && styles.usedText]}>{entry?.score ?? preview}</Text></View>{recommended && <Ionicons name="sparkles" size={12} color={colors.yellow} style={styles.recommendedIcon} />}
+            <Text numberOfLines={2} style={[styles.categoryName, entry && styles.usedText]}>{categoryLabels[category]}</Text><View style={[styles.scoreBadge, { backgroundColor: currentProfile.soft }, entry && styles.usedBadge, preview === 0 && !entry && styles.zeroBadge]}><Text style={[styles.scoreBadgeText, { color: currentProfile.accent }, entry && styles.usedText]}>{entry?.score ?? preview}</Text></View>{recommended && <Ionicons name="sparkles" size={12} color={colors.yellow} style={styles.recommendedIcon} />}
           </Pressable>;
         })}</View>
         <View style={styles.actions}><Pressable accessibilityRole="button" accessibilityLabel="Open scorecard" onPress={() => setShowScorecard(true)} style={styles.bottomScorecardButton}><Ionicons name="list-outline" size={17} color={colors.cyan} /><Text style={styles.bottomScorecardText}>Scorecard</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Reset game" onPress={reset} hitSlop={10} style={styles.resetButton}><Ionicons name="refresh-outline" size={14} color={colors.muted} /><Text style={styles.resetText}>Reset</Text></Pressable></View>
