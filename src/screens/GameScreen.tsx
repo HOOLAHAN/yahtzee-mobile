@@ -21,7 +21,7 @@ import {
 } from '../lib/game';
 import { submitScore } from '../services/scores';
 import { useAuth } from '../state/AuthContext';
-import { colors } from '../theme';
+import { colors, computerProfile, playerProfiles } from '../theme';
 import { RealDiceScreen } from './RealDiceScreen';
 
 const initialDice: DieFace[] = [1, 1, 1, 1, 1];
@@ -213,6 +213,8 @@ export function GameScreen() {
   const currentScore = hasRolled ? maximumAvailableScore(dice, used) : 0;
   const currentRound = Math.min(scores.length + 1, categories.length);
   const isComputerTurn = computerOpponent && currentPlayer === 2;
+  const secondPlayerProfile = computerOpponent ? computerProfile : playerProfiles[1];
+  const currentProfile = currentPlayer === 1 ? playerProfiles[0] : secondPlayerProfile;
   const recommendedCategory = useMemo(() => {
     if (!hasRolled) return null;
     return categories
@@ -384,9 +386,11 @@ export function GameScreen() {
 
   const winner = twoPlayer && complete ? totals[1] === totals[2] ? 'Draw game' : totals[1] > totals[2] ? 'Player 1 wins' : computerOpponent ? 'Computer wins' : 'Player 2 wins' : 'Game complete';
 
-  const scorecardContent = (player: Player) => <>
+  const scorecardContent = (player: Player) => {
+    const profile = player === 1 ? playerProfiles[0] : secondPlayerProfile;
+    return <>
     <View style={styles.scorecardOverview}>
-      <View style={styles.overviewItem}><Text style={styles.overviewLabel}>Total</Text><Text style={styles.overviewTotal}>{totals[player]}</Text></View>
+      <View style={styles.overviewItem}><Text style={styles.overviewLabel}>Total</Text><Text style={[styles.overviewTotal, { color: profile.score }]}>{totals[player]}</Text></View>
       <View style={styles.overviewDivider} />
       <View style={styles.overviewItem}><Text style={styles.overviewLabel}>Filled</Text><Text style={styles.overviewValue}>{histories[player].length} / {categories.length}</Text></View>
       <View style={styles.overviewDivider} />
@@ -394,11 +398,12 @@ export function GameScreen() {
     </View>
     <View style={[styles.bonusRow, bonuses[player] > 0 && styles.bonusRowEarned]}><View style={styles.bonusCopy}><Ionicons name={bonuses[player] > 0 ? 'checkmark-circle' : 'star-outline'} size={17} color={bonuses[player] > 0 ? colors.cyan : colors.muted} /><Text style={styles.bonusLabel}>Upper-section bonus</Text></View><Text style={[styles.bonusValue, bonuses[player] > 0 && styles.bonusEarned]}>{bonuses[player] > 0 ? `+${bonuses[player]}` : `${Math.max(0, upperBonusThreshold - upperSubtotals[player])} needed`}</Text></View>
     <Text style={styles.scoreGroupTitle}>Upper section</Text>
-    {upperCategories.map((category) => { const entry = histories[player].find((item) => item.category === category); return <View key={category} style={styles.sheetScoreRow}><Text style={styles.sheetCategory}>{category}</Text><Text style={styles.sheetScore}>{entry?.score ?? '—'}</Text></View>; })}
+    {upperCategories.map((category) => { const entry = histories[player].find((item) => item.category === category); return <View key={category} style={styles.sheetScoreRow}><Text style={styles.sheetCategory}>{category}</Text><Text style={[styles.sheetScore, { color: profile.score }]}>{entry?.score ?? '—'}</Text></View>; })}
     <Text style={styles.scoreGroupTitle}>Lower section</Text>
-    {categories.slice(6).map((category) => { const entry = histories[player].find((item) => item.category === category); return <View key={category} style={styles.sheetScoreRow}><Text style={styles.sheetCategory}>{category}</Text><Text style={styles.sheetScore}>{entry?.score ?? '—'}</Text></View>; })}
-    <View style={styles.sheetTotalRow}><Text style={styles.sheetTotalLabel}>Total score</Text><Text style={styles.sheetTotal}>{totals[player]}</Text></View>
+    {categories.slice(6).map((category) => { const entry = histories[player].find((item) => item.category === category); return <View key={category} style={styles.sheetScoreRow}><Text style={styles.sheetCategory}>{category}</Text><Text style={[styles.sheetScore, { color: profile.score }]}>{entry?.score ?? '—'}</Text></View>; })}
+    <View style={[styles.sheetTotalRow, { borderTopColor: profile.accent }]}><Text style={[styles.sheetTotalLabel, { color: profile.accent }]}>Total score</Text><Text style={[styles.sheetTotal, { color: profile.score }]}>{totals[player]}</Text></View>
   </>;
+  };
 
   const activeMode: GameMode = scorekeeperMode ? 'real' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
   if (scorekeeperMode) return <View style={styles.gameContainer}><View style={styles.scorekeeperModeBar}><GameModePicker active={activeMode} onChange={changeMode} /></View><RealDiceScreen /></View>;
@@ -408,7 +413,7 @@ export function GameScreen() {
 
     <View style={styles.turnControls}>
       <GameModePicker active={activeMode} onChange={changeMode} />
-      <View style={styles.turnHeadingRow}><View><Text style={[styles.title, currentPlayer === 2 && styles.playerTwo]}>{isComputerTurn ? "Computer's turn" : computerOpponent ? 'Your turn' : twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={styles.computerBadge}><Ionicons name="hardware-chip-outline" size={13} color={colors.pink} /><Text style={styles.computerBadgeText}>Thinking</Text></View>}</View>
+      <View style={styles.turnHeadingRow}><View><Text style={[styles.title, { color: currentProfile.score }]}>{isComputerTurn ? "Computer's turn" : computerOpponent ? 'Your turn' : twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={[styles.computerBadge, { backgroundColor: computerProfile.soft }]}><Ionicons name="hardware-chip-outline" size={13} color={computerProfile.accent} /><Text style={[styles.computerBadgeText, { color: computerProfile.accent }]}>Thinking</Text></View>}</View>
       <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} onPress={() => toggleHeld(index)} />)}</View>
       <View style={styles.rollMeta}><Text style={styles.help}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && styles.rollDotAvailable]} />)}</View></View>
       <Pressable accessibilityRole="button" accessibilityLabel={`Roll dice, ${rollsLeft} rolls remaining`} disabled={rollsLeft === 0 || complete || isComputerTurn} onPress={roll} style={({ pressed }) => [styles.primaryButton, (rollsLeft === 0 || complete || isComputerTurn) && styles.disabled, pressed && styles.pressed]}><View style={styles.buttonContent}><Ionicons name={isComputerTurn ? 'hardware-chip-outline' : 'dice'} size={22} color={colors.background} /><Text style={styles.primaryText}>{isComputerTurn ? 'Computer Playing' : hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></View></Pressable>
@@ -418,7 +423,7 @@ export function GameScreen() {
     <ScrollView contentContainerStyle={[styles.content, selectedCategory && styles.contentWithLock]}>
       {complete ? <View style={styles.completeCard}>
         <View style={styles.completeIcon}><Ionicons name="trophy-outline" size={34} color={colors.yellow} /></View><Text style={styles.completeTitle}>{winner}</Text>
-        {twoPlayer ? <View style={styles.finalTotals}><Text style={styles.playerOneText}>{computerOpponent ? 'You' : 'Player 1'} · {totals[1]}</Text><Text style={styles.playerTwoText}>{computerOpponent ? 'Computer' : 'Player 2'} · {totals[2]}</Text></View> : <Text style={styles.finalScore}>{totals[1]}</Text>}
+        {twoPlayer ? <View style={styles.finalTotals}><Text style={[styles.playerOneText, { color: playerProfiles[0].accent }]}>{computerOpponent ? 'You' : 'Player 1'} · {totals[1]}</Text><Text style={[styles.playerTwoText, { color: secondPlayerProfile.accent }]}>{computerOpponent ? 'Computer' : 'Player 2'} · {totals[2]}</Text></View> : <Text style={styles.finalScore}>{totals[1]}</Text>}
         <Text style={styles.completeCopy}>{bonuses[1] ? `Includes the ${upperBonusPoints}-point upper-section bonus.` : 'Final scorecard complete.'}</Text>
         {(!twoPlayer || computerOpponent) && <Pressable disabled={submitting || submitted} onPress={() => void sendScore()} style={[styles.primaryButton, submitted && styles.disabled]}><Text style={styles.primaryText}>{submitted ? 'Submitted' : submitting ? 'Submitting…' : 'Submit Your Score'}</Text></Pressable>}
         <View style={styles.completeActions}><Pressable onPress={() => void shareScorecard()} style={styles.secondaryButton}><Ionicons name="share-outline" size={19} color={colors.cyan} /><Text style={styles.secondaryText}>Share</Text></Pressable><Pressable onPress={clearGame} style={styles.newGameButton}><Ionicons name="refresh" size={19} color={colors.background} /><Text style={styles.newGameText}>New Game</Text></Pressable></View>
@@ -440,7 +445,7 @@ export function GameScreen() {
     <Modal transparent animationType="slide" visible={showScorecard} onRequestClose={() => setShowScorecard(false)}>
       <View style={styles.sheetBackdrop}><Pressable accessibilityLabel="Close scorecard" style={styles.sheetDismissArea} onPress={() => setShowScorecard(false)} /><SafeAreaView style={styles.sheet}>
         <View style={styles.sheetHandle} /><View style={styles.sheetHeader}><View><Text style={styles.sheetTitle}>Scorecard</Text><Text style={styles.sheetSubtitle}>{twoPlayer ? computerOpponent ? viewingPlayer === 1 ? 'You' : 'Computer' : `Player ${viewingPlayer}` : 'Single Player'} · Round {Math.min(histories[viewingPlayer].length + 1, categories.length)} of {categories.length}</Text></View><Pressable accessibilityLabel="Close scorecard" onPress={() => setShowScorecard(false)} style={styles.sheetClose}><Ionicons name="close" size={23} color={colors.white} /></Pressable></View>
-        {twoPlayer && <View style={styles.scorecardTabs}><Pressable onPress={() => setViewingPlayer(1)} style={[styles.scorecardTab, viewingPlayer === 1 && styles.scorecardTabActive]}><Text style={viewingPlayer === 1 ? styles.playerOneText : styles.muted}>{computerOpponent ? 'You' : 'Player 1'}</Text></Pressable><Pressable onPress={() => setViewingPlayer(2)} style={[styles.scorecardTab, viewingPlayer === 2 && styles.scorecardTabActive]}><Text style={viewingPlayer === 2 ? styles.playerTwoText : styles.muted}>{computerOpponent ? 'Computer' : 'Player 2'}</Text></Pressable></View>}
+        {twoPlayer && <View style={styles.scorecardTabs}><Pressable onPress={() => setViewingPlayer(1)} style={[styles.scorecardTab, viewingPlayer === 1 && styles.scorecardTabActive, viewingPlayer === 1 && { borderColor: playerProfiles[0].accent }]}><Text style={[styles.muted, viewingPlayer === 1 && { color: playerProfiles[0].accent }]}>{computerOpponent ? 'You' : 'Player 1'}</Text></Pressable><Pressable onPress={() => setViewingPlayer(2)} style={[styles.scorecardTab, viewingPlayer === 2 && styles.scorecardTabActive, viewingPlayer === 2 && { borderColor: secondPlayerProfile.accent }]}><Text style={[styles.muted, viewingPlayer === 2 && { color: secondPlayerProfile.accent }]}>{computerOpponent ? 'Computer' : 'Player 2'}</Text></Pressable></View>}
         <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.sheetContent}>{scorecardContent(viewingPlayer)}</ScrollView>
       </SafeAreaView></View>
     </Modal>
