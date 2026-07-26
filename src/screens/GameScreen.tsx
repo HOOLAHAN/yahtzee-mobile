@@ -215,10 +215,31 @@ export function GameScreen() {
   };
 
   const shareScorecard = async () => {
-    const lines = ([1, ...(twoPlayer ? [2] : [])] as Player[]).map((player) =>
-      `Player ${player}: ${totals[player]}${bonuses[player] ? ` (includes ${upperBonusPoints} upper bonus)` : ''}\n${histories[player].map((entry, index) => `${index + 1}. ${entry.category}: ${entry.score}`).join('\n')}`
-    );
-    await Share.share({ message: `Yahtzee! Scorecard\n\n${lines.join('\n\n')}` });
+    if (!complete) return;
+    const resultFor = (player: Player) => {
+      const scoreFor = (category: Category) => histories[player].find((entry) => entry.category === category)?.score ?? 0;
+      const upper = upperCategories.map((category) => `${categoryLabels[category].padEnd(13)} ${scoreFor(category)}`).join('\n');
+      const lower = categories.slice(6).map((category) => `${categoryLabels[category].padEnd(13)} ${scoreFor(category)}`).join('\n');
+      return [
+        twoPlayer ? `PLAYER ${player}` : 'FINAL SCORE',
+        '────────────────────',
+        `${totals[player]} POINTS`,
+        '',
+        'UPPER SECTION',
+        upper,
+        `Subtotal      ${upperSubtotals[player]}`,
+        `Bonus         ${bonuses[player] ? `+${upperBonusPoints}` : '—'}`,
+        '',
+        'LOWER SECTION',
+        lower,
+      ].join('\n');
+    };
+    const players = ([1, ...(twoPlayer ? [2] : [])] as Player[]).map(resultFor).join('\n\n════════════════════\n\n');
+    const headline = twoPlayer ? winner.toUpperCase() : 'GAME COMPLETE';
+    await Share.share({
+      title: 'Yahtzee result',
+      message: `YAHTZEE!\n${headline}\n════════════════════\n\n${players}\n\n════════════════════\nCan you beat this score?`,
+    });
   };
 
   const sendScore = async () => {
@@ -275,7 +296,7 @@ export function GameScreen() {
             <Text numberOfLines={2} style={[styles.categoryName, entry && styles.usedText]}>{categoryLabels[category]}</Text><View style={[styles.scoreBadge, entry && styles.usedBadge, preview === 0 && !entry && styles.zeroBadge]}><Text style={[styles.scoreBadgeText, entry && styles.usedText]}>{entry?.score ?? preview}</Text></View>{recommended && <Ionicons name="sparkles" size={12} color={colors.yellow} style={styles.recommendedIcon} />}
           </Pressable>;
         })}</View>
-        <View style={styles.actions}><Pressable onPress={reset} style={styles.resetButton}><Ionicons name="refresh-outline" size={18} color={colors.danger} /><Text style={styles.resetText}>Reset</Text></Pressable><Pressable onPress={() => void shareScorecard()} style={styles.shareButton}><Ionicons name="share-outline" size={18} color={colors.background} /><Text style={styles.shareText}>Share</Text></Pressable></View>
+        <View style={styles.actions}><Pressable onPress={reset} style={styles.resetButton}><Ionicons name="refresh-outline" size={18} color={colors.danger} /><Text style={styles.resetText}>Reset Game</Text></Pressable></View>
       </>}
     </ScrollView>
 
@@ -304,7 +325,7 @@ const styles = StyleSheet.create({
   sectionHeadingRow: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 8 }, sectionTitle: { color: colors.yellow, fontSize: 19, fontWeight: '900' }, sectionSubtitle: { color: colors.muted, fontSize: 11, marginTop: 2 }, recommendedLegend: { flexDirection: 'row', alignItems: 'center', gap: 3 }, recommendedLegendText: { color: colors.yellow, fontSize: 10, fontWeight: '800' },
   categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 6 }, category: { width: '32%', minHeight: 46, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, paddingHorizontal: 7, paddingVertical: 7, borderRadius: 9 }, recommendedCategory: { borderColor: colors.yellow, shadowColor: colors.yellow, shadowOpacity: 0.35, shadowRadius: 5 }, selectedCategory: { borderColor: colors.cyan, borderWidth: 2, backgroundColor: '#173033' }, usedCategory: { opacity: 0.52, backgroundColor: '#151c1e' }, categoryName: { color: colors.mint, fontWeight: '800', fontSize: 10.5, lineHeight: 13, flex: 1, paddingRight: 3 }, usedText: { color: colors.muted }, scoreBadge: { minWidth: 23, height: 23, borderRadius: 12, backgroundColor: '#20383b', alignItems: 'center', justifyContent: 'center' }, scoreBadgeText: { color: colors.cyan, fontWeight: '900', fontSize: 11 }, zeroBadge: { backgroundColor: '#34202f' }, usedBadge: { backgroundColor: '#273034' }, recommendedIcon: { position: 'absolute', top: 2, right: 2 },
   lockBar: { position: 'absolute', zIndex: 15, left: 14, right: 14, bottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#162326', borderColor: colors.cyan, borderWidth: 1, borderRadius: 14, padding: 13, shadowColor: colors.cyan, shadowOpacity: 0.28, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 10 }, lockLabel: { color: colors.white, fontWeight: '900' }, lockScore: { color: colors.yellow, fontWeight: '800', marginTop: 2 }, lockButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.cyan, borderRadius: 10, paddingHorizontal: 15, paddingVertical: 11 }, lockButtonText: { color: colors.background, fontWeight: '900' },
-  actions: { flexDirection: 'row', gap: 10, marginTop: 15 }, resetButton: { flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', borderWidth: 1, borderColor: colors.danger, padding: 12, borderRadius: 11, alignItems: 'center' }, resetText: { color: colors.danger, fontWeight: '900' }, shareButton: { flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', backgroundColor: colors.yellow, padding: 12, borderRadius: 11, alignItems: 'center' }, shareText: { color: colors.background, fontWeight: '900' },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 15 }, resetButton: { flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', borderWidth: 1, borderColor: colors.danger, padding: 12, borderRadius: 11, alignItems: 'center' }, resetText: { color: colors.danger, fontWeight: '900' },
   completeCard: { backgroundColor: colors.surface, borderColor: colors.yellow, borderWidth: 1, borderRadius: 20, padding: 20, alignItems: 'center' }, completeIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#2a2d14', alignItems: 'center', justifyContent: 'center' }, completeTitle: { color: colors.yellow, fontSize: 25, fontWeight: '900', marginTop: 12 }, finalScore: { color: colors.cyan, fontSize: 48, fontWeight: '900', marginTop: 4 }, finalTotals: { flexDirection: 'row', gap: 22, marginTop: 14 }, completeCopy: { color: colors.mint, textAlign: 'center', marginTop: 7, marginBottom: 8 }, completeActions: { width: '100%', flexDirection: 'row', gap: 10, marginTop: 10 }, secondaryButton: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, borderColor: colors.cyan, borderWidth: 1, borderRadius: 11, padding: 12 }, secondaryText: { color: colors.cyan, fontWeight: '900' }, newGameButton: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, backgroundColor: colors.yellow, borderRadius: 11, padding: 12 }, newGameText: { color: colors.background, fontWeight: '900' }, playerOneText: { color: colors.cyan, fontWeight: '900' }, playerTwoText: { color: colors.pink, fontWeight: '900' }, muted: { color: colors.muted, fontWeight: '800' },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.68)', justifyContent: 'flex-end' }, sheetDismissArea: { flex: 1 }, sheet: { height: '82%', backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderColor: '#315a5e', borderWidth: 1, paddingTop: 8 }, sheetHandle: { width: 42, height: 4, borderRadius: 2, backgroundColor: '#45565a', alignSelf: 'center' }, sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 }, sheetTitle: { color: colors.yellow, fontSize: 24, fontWeight: '900' }, sheetClose: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#263337', alignItems: 'center', justifyContent: 'center' }, sheetContent: { paddingHorizontal: 20, paddingBottom: 34 }, scorecardTabs: { flexDirection: 'row', marginHorizontal: 20, marginBottom: 10, backgroundColor: colors.background, borderRadius: 10, padding: 3 }, scorecardTab: { flex: 1, alignItems: 'center', padding: 9, borderRadius: 8 }, scorecardTabActive: { backgroundColor: '#20383b' }, sectionSummary: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: colors.background, borderRadius: 10, padding: 12 }, sectionSummaryLabel: { color: colors.mint, fontWeight: '800' }, sectionSummaryValue: { color: colors.yellow, fontWeight: '900' }, bonusRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, paddingHorizontal: 4 }, bonusLabel: { color: colors.muted }, bonusValue: { color: colors.muted, fontWeight: '800' }, bonusEarned: { color: colors.cyan }, scoreGroupTitle: { color: colors.pink, fontWeight: '900', fontSize: 17, marginTop: 12, marginBottom: 5 }, sheetScoreRow: { flexDirection: 'row', justifyContent: 'space-between', borderBottomColor: '#2a3639', borderBottomWidth: 1, paddingVertical: 9 }, sheetCategory: { color: colors.mint }, sheetScore: { color: colors.yellow, fontWeight: '900' }, sheetTotalRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopColor: colors.cyan, borderTopWidth: 1, marginTop: 16, paddingTop: 14 }, sheetTotalLabel: { color: colors.cyan, fontSize: 18, fontWeight: '900' }, sheetTotal: { color: colors.yellow, fontSize: 24, fontWeight: '900' },
 });
