@@ -7,7 +7,15 @@ import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
 
 const initialDice: DieFace[] = [1, 1, 1, 1, 1];
-const pips: Record<DieFace, string> = { 1: '⚀', 2: '⚁', 3: '⚂', 4: '⚃', 5: '⚄', 6: '⚅' };
+const pipCells: Record<DieFace, number[]> = {
+  1: [4],
+  2: [0, 8],
+  3: [0, 4, 8],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 2, 3, 5, 6, 8],
+};
+const historyPips: Record<DieFace, string> = { 1: '⚀', 2: '⚁', 3: '⚂', 4: '⚃', 5: '⚄', 6: '⚅' };
 type Player = 1 | 2;
 type Histories = Record<Player, ScoreEntry[]>;
 
@@ -17,9 +25,12 @@ function AnimatedDie({ value, index, held, rollToken, canHold, onPress }: {
   const spin = useRef(new Animated.Value(0)).current;
   const lift = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(1)).current;
+  const lastRollToken = useRef(0);
 
   useEffect(() => {
-    if (rollToken === 0 || held) return;
+    if (rollToken === 0 || lastRollToken.current === rollToken) return;
+    lastRollToken.current = rollToken;
+    if (held) return;
     spin.setValue(0); lift.setValue(0); scale.setValue(0.78);
     Animated.parallel([
       Animated.timing(spin, { toValue: 1, duration: 620 + index * 45, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
@@ -37,7 +48,7 @@ function AnimatedDie({ value, index, held, rollToken, canHold, onPress }: {
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', index % 2 === 0 ? '720deg' : '-720deg'] });
   return <Animated.View style={[styles.dieSlot, { transform: [{ translateY: lift }, { rotate }, { scale }] }, held && styles.heldDieSlot]}>
     <Pressable disabled={!canHold} onPress={onPress} style={({ pressed }) => [styles.die, held && styles.heldDie, pressed && styles.diePressed]}>
-      <Text style={styles.dieText}>{pips[value]}</Text>
+      <View style={styles.pipGrid}>{Array.from({ length: 9 }, (_, cell) => <View key={cell} style={styles.pipCell}>{pipCells[value].includes(cell) && <View style={styles.pip} />}</View>)}</View>
       {held && <View style={styles.holdBadge}><Text style={styles.holdBadgeText}>HELD</Text></View>}
     </Pressable>
   </Animated.View>;
@@ -160,7 +171,7 @@ export function GameScreen() {
         <Pressable onPress={() => setShowScorecard((value) => !value)}><Text style={styles.panelTitle}>Score Card {showScorecard ? '−' : '+'}</Text></Pressable>
         {showScorecard && <>
           {twoPlayer && <View style={styles.scorecardTabs}><Pressable onPress={() => setViewingPlayer(1)}><Text style={viewingPlayer === 1 ? styles.playerOneText : styles.muted}>Player 1</Text></Pressable><Pressable onPress={() => setViewingPlayer(2)}><Text style={viewingPlayer === 2 ? styles.playerTwoText : styles.muted}>Player 2</Text></Pressable></View>}
-          {histories[viewingPlayer].map((entry, index) => <View key={`${entry.category}-${index}`} style={styles.historyRow}><Text style={styles.round}>{index + 1}</Text><View style={styles.historyMain}><Text style={styles.historyCategory}>{entry.category}</Text><Text style={styles.historyDice}>{entry.dice.map((die) => pips[die]).join(' ')}</Text></View><Text style={styles.historyScore}>{entry.score}</Text></View>)}
+          {histories[viewingPlayer].map((entry, index) => <View key={`${entry.category}-${index}`} style={styles.historyRow}><Text style={styles.round}>{index + 1}</Text><View style={styles.historyMain}><Text style={styles.historyCategory}>{entry.category}</Text><Text style={styles.historyDice}>{entry.dice.map((die) => historyPips[die]).join(' ')}</Text></View><Text style={styles.historyScore}>{entry.score}</Text></View>)}
           <Text style={styles.scorecardTotal}>Total: {totals[viewingPlayer]}</Text>
         </>}
       </View>}
@@ -174,11 +185,12 @@ const styles = StyleSheet.create({
   content: { padding: 18, paddingBottom: 48 }, modePicker: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 12, padding: 4 },
   mode: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 9 }, modeActive: { backgroundColor: colors.cyan }, modeText: { color: colors.muted, fontWeight: '800' }, modeTextActive: { color: colors.background },
   title: { color: colors.yellow, fontSize: 30, fontWeight: '900', textAlign: 'center', marginTop: 20 }, playerTwo: { color: colors.pink }, help: { color: colors.pink, textTransform: 'uppercase', fontWeight: '800', textAlign: 'center', marginVertical: 15 },
-  diceRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 7, marginBottom: 16, paddingTop: 12 },
-  dieSlot: { flex: 1, aspectRatio: 0.92 }, heldDieSlot: { transform: [{ translateY: -7 }] },
+  diceRow: { flexDirection: 'row', justifyContent: 'center', gap: 11, marginBottom: 20, paddingTop: 15 },
+  dieSlot: { width: 54, height: 54 }, heldDieSlot: { transform: [{ translateY: -7 }] },
   die: { flex: 1, backgroundColor: colors.cyan, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.45, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
   heldDie: { backgroundColor: colors.yellow, borderColor: colors.pink, shadowColor: colors.yellow, shadowOpacity: 0.9, shadowRadius: 13 }, diePressed: { opacity: 0.78, transform: [{ scale: 0.94 }] },
-  dieText: { color: colors.background, fontSize: 41 }, holdBadge: { position: 'absolute', bottom: -9, backgroundColor: colors.pink, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 }, holdBadgeText: { color: colors.white, fontSize: 8, fontWeight: '900' },
+  pipGrid: { width: 36, height: 36, flexDirection: 'row', flexWrap: 'wrap' }, pipCell: { width: 12, height: 12, alignItems: 'center', justifyContent: 'center' }, pip: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.background },
+  holdBadge: { position: 'absolute', bottom: -9, backgroundColor: colors.pink, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 }, holdBadgeText: { color: colors.white, fontSize: 8, fontWeight: '900' },
   primaryButton: { backgroundColor: colors.cyan, padding: 15, borderRadius: 14, alignItems: 'center', marginVertical: 8 }, primaryText: { color: colors.background, fontWeight: '900', fontSize: 17 }, pressed: { opacity: 0.75 },
   scoreSummary: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginVertical: 10 }, summaryLabel: { color: colors.cyan, fontWeight: '700' }, summaryValue: { color: colors.yellow, fontSize: 24, fontWeight: '900', textAlign: 'center' },
   playerTotals: { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 6 }, playerOneText: { color: colors.cyan, fontWeight: '900' }, playerTwoText: { color: colors.pink, fontWeight: '900' }, muted: { color: colors.muted, fontWeight: '800' },
