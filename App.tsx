@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useState } from 'react';
 import { Image, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import './src/services/amplify';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { AboutScreen } from './src/screens/AboutScreen';
@@ -11,11 +12,11 @@ import { colors } from './src/theme';
 
 type Tab = 'game' | 'leaderboard' | 'account' | 'about';
 
-const tabs: { key: Tab; label: string; icon: string }[] = [
-  { key: 'game', label: 'Play', icon: '🎲' },
-  { key: 'leaderboard', label: 'Scores', icon: '🏆' },
-  { key: 'account', label: 'Account', icon: '👤' },
-  { key: 'about', label: 'About', icon: 'ℹ️' },
+const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }[] = [
+  { key: 'game', label: 'Play', icon: 'dice-outline', activeIcon: 'dice' },
+  { key: 'leaderboard', label: 'Scores', icon: 'trophy-outline', activeIcon: 'trophy' },
+  { key: 'account', label: 'Account', icon: 'person-outline', activeIcon: 'person' },
+  { key: 'about', label: 'About', icon: 'information-circle-outline', activeIcon: 'information-circle' },
 ];
 
 export default function App() {
@@ -35,7 +36,7 @@ export default function App() {
         <View style={styles.tabBar}>
           {tabs.map((item) => (
             <Pressable key={item.key} onPress={() => setTab(item.key)} style={styles.tab}>
-              <Text style={styles.tabIcon}>{item.icon}</Text>
+              <Ionicons name={tab === item.key ? item.activeIcon : item.icon} size={23} color={tab === item.key ? colors.cyan : colors.muted} />
               <Text style={[styles.tabLabel, tab === item.key && styles.activeTab]}>{item.label}</Text>
             </Pressable>
           ))}
@@ -53,7 +54,6 @@ const styles = StyleSheet.create({
   screen: { flex: 1 },
   tabBar: { flexDirection: 'row', minHeight: 70, borderTopColor: '#253237', borderTopWidth: 1, backgroundColor: colors.surface },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3 },
-  tabIcon: { fontSize: 20 },
   tabLabel: { color: colors.muted, fontWeight: '700', fontSize: 12 },
   activeTab: { color: colors.cyan },
 });

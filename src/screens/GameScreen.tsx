@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { categories, Category, DieFace, maximumAvailableScore, rollDie, scoreCategory, ScoreEntry } from '../lib/game';
 import { submitScore } from '../services/scores';
 import { useAuth } from '../state/AuthContext';
@@ -15,9 +16,12 @@ const pipCells: Record<DieFace, number[]> = {
   5: [0, 2, 4, 6, 8],
   6: [0, 2, 3, 5, 6, 8],
 };
-const historyPips: Record<DieFace, string> = { 1: '⚀', 2: '⚁', 3: '⚂', 4: '⚃', 5: '⚄', 6: '⚅' };
 type Player = 1 | 2;
 type Histories = Record<Player, ScoreEntry[]>;
+
+function PipFace({ value, small = false }: { value: DieFace; small?: boolean }) {
+  return <View style={small ? styles.smallPipGrid : styles.pipGrid}>{Array.from({ length: 9 }, (_, cell) => <View key={cell} style={small ? styles.smallPipCell : styles.pipCell}>{pipCells[value].includes(cell) && <View style={small ? styles.smallPip : styles.pip} />}</View>)}</View>;
+}
 
 function AnimatedDie({ value, index, held, rollToken, canHold, onPress }: {
   value: DieFace; index: number; held: boolean; rollToken: number; canHold: boolean; onPress: () => void;
@@ -48,7 +52,7 @@ function AnimatedDie({ value, index, held, rollToken, canHold, onPress }: {
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', index % 2 === 0 ? '720deg' : '-720deg'] });
   return <Animated.View style={[styles.dieSlot, { transform: [{ translateY: lift }, { rotate }, { scale }] }, held && styles.heldDieSlot]}>
     <Pressable disabled={!canHold} onPress={onPress} style={({ pressed }) => [styles.die, held && styles.heldDie, pressed && styles.diePressed]}>
-      <View style={styles.pipGrid}>{Array.from({ length: 9 }, (_, cell) => <View key={cell} style={styles.pipCell}>{pipCells[value].includes(cell) && <View style={styles.pip} />}</View>)}</View>
+      <PipFace value={value} />
       {held && <View style={styles.holdBadge}><Text style={styles.holdBadgeText}>HELD</Text></View>}
     </Pressable>
   </Animated.View>;
@@ -152,7 +156,7 @@ export function GameScreen() {
       <Text style={[styles.title, currentPlayer === 2 && styles.playerTwo]}>{twoPlayer ? `Player ${currentPlayer}'s Turn` : 'Single Player'}</Text>
       <Text style={styles.help}>{hasRolled ? 'Tap dice to hold them' : 'Roll dice to begin'}</Text>
       <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled} onPress={() => toggleHeld(index)} />)}</View>
-      <Pressable disabled={rollsLeft === 0 || complete} onPress={roll} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}><Text style={styles.primaryText}>🎲 Roll Dice ({rollsLeft} left)</Text></Pressable>
+      <Pressable disabled={rollsLeft === 0 || complete} onPress={roll} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}><View style={styles.buttonContent}><Ionicons name="dice" size={22} color={colors.background} /><Text style={styles.primaryText}>Roll Dice ({rollsLeft} left)</Text></View></Pressable>
       <View style={styles.scoreSummary}>
         <View><Text style={styles.summaryLabel}>Current Score</Text><Text style={styles.summaryValue}>{currentScore}</Text></View>
         <View><Text style={styles.summaryLabel}>Total Score</Text><Text style={styles.summaryValue}>{totals[currentPlayer]}</Text></View>
@@ -171,7 +175,7 @@ export function GameScreen() {
         <Pressable onPress={() => setShowScorecard((value) => !value)}><Text style={styles.panelTitle}>Score Card {showScorecard ? '−' : '+'}</Text></Pressable>
         {showScorecard && <>
           {twoPlayer && <View style={styles.scorecardTabs}><Pressable onPress={() => setViewingPlayer(1)}><Text style={viewingPlayer === 1 ? styles.playerOneText : styles.muted}>Player 1</Text></Pressable><Pressable onPress={() => setViewingPlayer(2)}><Text style={viewingPlayer === 2 ? styles.playerTwoText : styles.muted}>Player 2</Text></Pressable></View>}
-          {histories[viewingPlayer].map((entry, index) => <View key={`${entry.category}-${index}`} style={styles.historyRow}><Text style={styles.round}>{index + 1}</Text><View style={styles.historyMain}><Text style={styles.historyCategory}>{entry.category}</Text><Text style={styles.historyDice}>{entry.dice.map((die) => historyPips[die]).join(' ')}</Text></View><Text style={styles.historyScore}>{entry.score}</Text></View>)}
+          {histories[viewingPlayer].map((entry, index) => <View key={`${entry.category}-${index}`} style={styles.historyRow}><Text style={styles.round}>{index + 1}</Text><View style={styles.historyMain}><Text style={styles.historyCategory}>{entry.category}</Text><View style={styles.historyDice}>{entry.dice.map((die, dieIndex) => <View key={dieIndex} style={styles.historyDie}><PipFace value={die} small /></View>)}</View></View><Text style={styles.historyScore}>{entry.score}</Text></View>)}
           <Text style={styles.scorecardTotal}>Total: {totals[viewingPlayer]}</Text>
         </>}
       </View>}
@@ -190,12 +194,13 @@ const styles = StyleSheet.create({
   die: { flex: 1, backgroundColor: colors.cyan, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.45, shadowRadius: 8, shadowOffset: { width: 0, height: 0 } },
   heldDie: { backgroundColor: colors.yellow, borderColor: colors.pink, shadowColor: colors.yellow, shadowOpacity: 0.9, shadowRadius: 13 }, diePressed: { opacity: 0.78, transform: [{ scale: 0.94 }] },
   pipGrid: { width: 36, height: 36, flexDirection: 'row', flexWrap: 'wrap' }, pipCell: { width: 12, height: 12, alignItems: 'center', justifyContent: 'center' }, pip: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.background },
+  smallPipGrid: { width: 18, height: 18, flexDirection: 'row', flexWrap: 'wrap' }, smallPipCell: { width: 6, height: 6, alignItems: 'center', justifyContent: 'center' }, smallPip: { width: 3.5, height: 3.5, borderRadius: 2, backgroundColor: colors.background },
   holdBadge: { position: 'absolute', bottom: -9, backgroundColor: colors.pink, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2 }, holdBadgeText: { color: colors.white, fontSize: 8, fontWeight: '900' },
-  primaryButton: { backgroundColor: colors.cyan, padding: 15, borderRadius: 14, alignItems: 'center', marginVertical: 8 }, primaryText: { color: colors.background, fontWeight: '900', fontSize: 17 }, pressed: { opacity: 0.75 },
+  primaryButton: { backgroundColor: colors.cyan, padding: 15, borderRadius: 14, alignItems: 'center', marginVertical: 8 }, buttonContent: { flexDirection: 'row', alignItems: 'center', gap: 8 }, primaryText: { color: colors.background, fontWeight: '900', fontSize: 17 }, pressed: { opacity: 0.75 },
   scoreSummary: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: colors.surface, borderRadius: 14, padding: 14, marginVertical: 10 }, summaryLabel: { color: colors.cyan, fontWeight: '700' }, summaryValue: { color: colors.yellow, fontSize: 24, fontWeight: '900', textAlign: 'center' },
   playerTotals: { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 6 }, playerOneText: { color: colors.cyan, fontWeight: '900' }, playerTwoText: { color: colors.pink, fontWeight: '900' }, muted: { color: colors.muted, fontWeight: '800' },
   sectionTitle: { color: colors.yellow, fontSize: 22, fontWeight: '900', textAlign: 'center', marginVertical: 13 }, categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 9 }, category: { minWidth: '30%', maxWidth: '48%', paddingHorizontal: 11, paddingVertical: 12, borderRadius: 10, alignItems: 'center' }, scoringCategory: { backgroundColor: colors.yellow }, zeroCategory: { backgroundColor: colors.pink }, usedCategory: { backgroundColor: '#273034' }, categoryName: { color: colors.background, fontWeight: '900', textAlign: 'center' }, usedText: { color: colors.muted },
   panel: { borderColor: colors.cyan, borderWidth: 1, borderRadius: 14, backgroundColor: colors.surface, padding: 15, marginTop: 18 }, panelTitle: { color: colors.cyan, fontSize: 21, fontWeight: '900', textAlign: 'center' }, breakdown: { marginTop: 12 }, breakdownRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 }, breakdownLabel: { color: colors.mint }, breakdownScore: { color: colors.yellow, fontWeight: '800' }, zeroText: { color: colors.pink },
-  scorecardTabs: { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 15 }, historyRow: { flexDirection: 'row', alignItems: 'center', borderTopColor: '#344044', borderTopWidth: 1, paddingVertical: 10 }, round: { color: colors.cyan, width: 28 }, historyMain: { flex: 1 }, historyCategory: { color: colors.mint, fontWeight: '700' }, historyDice: { color: colors.yellow, fontSize: 18, marginTop: 2 }, historyScore: { color: colors.yellow, fontSize: 18, fontWeight: '900' }, scorecardTotal: { color: colors.cyan, fontWeight: '900', fontSize: 18, textAlign: 'right', marginTop: 12 },
+  scorecardTabs: { flexDirection: 'row', justifyContent: 'space-around', marginVertical: 15 }, historyRow: { flexDirection: 'row', alignItems: 'center', borderTopColor: '#344044', borderTopWidth: 1, paddingVertical: 10 }, round: { color: colors.cyan, width: 28 }, historyMain: { flex: 1 }, historyCategory: { color: colors.mint, fontWeight: '700' }, historyDice: { flexDirection: 'row', gap: 4, marginTop: 5 }, historyDie: { width: 23, height: 23, borderRadius: 5, backgroundColor: colors.yellow, alignItems: 'center', justifyContent: 'center' }, historyScore: { color: colors.yellow, fontSize: 18, fontWeight: '900' }, scorecardTotal: { color: colors.cyan, fontWeight: '900', fontSize: 18, textAlign: 'right', marginTop: 12 },
   actions: { flexDirection: 'row', gap: 10, marginTop: 18 }, resetButton: { flex: 1, borderWidth: 1, borderColor: colors.danger, padding: 14, borderRadius: 12, alignItems: 'center' }, resetText: { color: colors.danger, fontWeight: '900' }, shareButton: { flex: 1, backgroundColor: colors.yellow, padding: 14, borderRadius: 12, alignItems: 'center' }, shareText: { color: colors.background, fontWeight: '900' },
 });
