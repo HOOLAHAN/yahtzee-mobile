@@ -6,6 +6,7 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "aws-amplify": "^6.19.0",
     "expo": "~57.0.8",
+    "expo-dev-client": "~57.0.9",
     "expo-haptics": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
@@ -21,6 +22,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "start:dev-client": "expo start --dev-client",
+    "build:ios:development": "npx eas-cli@latest build --platform ios --profile development",
     "typecheck": "tsc --noEmit"
   },
   "private": true

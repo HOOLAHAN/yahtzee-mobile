@@ -9,7 +9,10 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "bundleIdentifier": "com.iainhoolahan.yahtzee",
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.iainhoolahan.yahtzee",
@@ -23,6 +26,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f301eab8-f15b-45bc-95f3-003588b54842"
+      }
+    },
+    "owner": "iainhoolahan"
   }
 }
