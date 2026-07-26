@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { ScreenHeader } from '../components/ScreenHeader';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
 
@@ -40,18 +42,43 @@ export function AccountScreen() {
 
   if (auth.loading) return <ActivityIndicator style={styles.loader} color={colors.cyan} size="large" />;
   if (auth.user) return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-    <Text style={styles.title}>Account</Text>
-    <View style={styles.card}><Text style={styles.label}>Signed in as</Text><Text style={styles.username}>{auth.user.username}</Text>{auth.user.email && <Text style={styles.email}>{auth.user.email}</Text>}</View>
-    <Text style={styles.aboutTitle}>Account Security</Text><Text style={styles.about}>Manage the Cognito account shared by the website and mobile app.</Text>
-    <Pressable onPress={() => { setShowPasswordChange((value) => !value); setManagementError(''); }} style={styles.managementButton}><Text style={styles.managementButtonText}>{showPasswordChange ? 'Cancel Password Change' : 'Change Password'}</Text></Pressable>
+    <ScreenHeader title="Account" />
+    <View style={styles.profileCard}>
+      <View style={styles.avatar}><Text style={styles.avatarText}>{auth.user.username.charAt(0).toUpperCase()}</Text></View>
+      <View style={styles.profileDetails}>
+        <Text style={styles.username}>{auth.user.username}</Text>
+        {auth.user.email && <Text numberOfLines={1} style={styles.email}>{auth.user.email}</Text>}
+        <View style={styles.statusRow}><View style={styles.statusDot} /><Text style={styles.statusText}>Signed in</Text></View>
+      </View>
+    </View>
+
+    <Text style={styles.sectionTitle}>Security & access</Text>
+    <Text style={styles.sectionDescription}>This account is shared by the Yahtzee website and mobile app.</Text>
+    <View style={styles.actionGroup}>
+      <Pressable onPress={() => { setShowPasswordChange((value) => !value); setManagementError(''); }} style={styles.actionRow}>
+        <View style={styles.actionIcon}><Ionicons name="shield-checkmark-outline" size={21} color={colors.cyan} /></View>
+        <View style={styles.actionCopy}><Text style={styles.actionTitle}>Change password</Text><Text style={styles.actionDescription}>Update your Cognito sign-in password</Text></View>
+        <Ionicons name={showPasswordChange ? 'chevron-up' : 'chevron-forward'} size={20} color={colors.muted} />
+      </Pressable>
+      <View style={styles.divider} />
+      <Pressable onPress={() => void auth.logout()} style={styles.actionRow}>
+        <View style={styles.actionIcon}><Ionicons name="log-out-outline" size={21} color={colors.pink} /></View>
+        <View style={styles.actionCopy}><Text style={styles.actionTitle}>Sign out</Text><Text style={styles.actionDescription}>Sign out on this device</Text></View>
+        <Ionicons name="chevron-forward" size={20} color={colors.muted} />
+      </Pressable>
+    </View>
     {showPasswordChange && <View style={styles.managementPanel}>
       <TextInput value={oldPassword} onChangeText={setOldPassword} placeholder="Current password" placeholderTextColor={colors.muted} style={styles.input} secureTextEntry autoComplete="current-password" />
       <TextInput value={newPassword} onChangeText={setNewPassword} placeholder="New password" placeholderTextColor={colors.muted} style={styles.input} secureTextEntry autoComplete="new-password" />
       <Pressable disabled={managementBusy} onPress={() => void changePassword()} style={styles.button}><Text style={styles.buttonText}>{managementBusy ? 'Updating…' : 'Update Password'}</Text></Pressable>
     </View>}
     {managementError ? <Text style={styles.error}>{managementError}</Text> : null}
-    <Pressable disabled={managementBusy} onPress={confirmDelete} style={styles.deleteButton}><Text style={styles.deleteText}>Delete Account</Text></Pressable>
-    <Pressable onPress={() => void auth.logout()} style={styles.outlineButton}><Text style={styles.outlineText}>Sign Out</Text></Pressable>
+    <Text style={[styles.sectionTitle, styles.dangerTitle]}>Danger zone</Text>
+    <Pressable disabled={managementBusy} onPress={confirmDelete} style={styles.deleteButton}>
+      <Ionicons name="trash-outline" size={21} color={colors.danger} />
+      <View style={styles.actionCopy}><Text style={styles.deleteText}>Delete account</Text><Text style={styles.actionDescription}>Permanently remove your account</Text></View>
+      <Ionicons name="chevron-forward" size={20} color={colors.danger} />
+    </Pressable>
   </ScrollView>;
 
   const submit = async () => {
@@ -77,7 +104,7 @@ export function AccountScreen() {
   };
 
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-    <Text style={styles.title}>{headings[mode][0]}</Text><Text style={styles.subtitle}>{headings[mode][1]}</Text>
+    <ScreenHeader title={headings[mode][0]} subtitle={headings[mode][1]} />
     {mode === 'register' && <TextInput value={username} onChangeText={setUsername} placeholder="Display name" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="none" />}
     <TextInput value={email} onChangeText={setEmail} placeholder="Email" placeholderTextColor={colors.muted} style={styles.input} keyboardType="email-address" autoCapitalize="none" autoComplete="email" editable={mode !== 'confirm' && mode !== 'confirmReset'} />
     {(mode === 'confirm' || mode === 'confirmReset') && <TextInput value={code} onChangeText={setCode} placeholder="Verification code" placeholderTextColor={colors.muted} style={styles.input} keyboardType="number-pad" />}
@@ -91,7 +118,12 @@ export function AccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { flexGrow: 1, padding: 24, justifyContent: 'center' }, loader: { flex: 1 }, title: { color: colors.yellow, fontSize: 30, fontWeight: '900', textAlign: 'center' }, subtitle: { color: colors.mint, textAlign: 'center', marginTop: 8, marginBottom: 24 },
+  content: { flexGrow: 1, padding: 20, paddingBottom: 48 }, loader: { flex: 1 },
   input: { backgroundColor: colors.surface, color: colors.white, borderColor: colors.cyan, borderWidth: 1, borderRadius: 12, padding: 15, marginBottom: 12, fontSize: 16 }, button: { backgroundColor: colors.cyan, padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 6 }, buttonText: { color: colors.background, fontWeight: '900', fontSize: 16 }, error: { color: colors.danger, marginBottom: 8 }, link: { color: colors.pink, textAlign: 'center', marginTop: 18, fontWeight: '700' },
-  card: { backgroundColor: colors.surface, borderColor: colors.cyan, borderWidth: 1, borderRadius: 16, padding: 24, marginVertical: 28, alignItems: 'center' }, label: { color: colors.muted }, username: { color: colors.yellow, fontSize: 24, fontWeight: '900', marginTop: 8 }, email: { color: colors.mint, marginTop: 6 }, outlineButton: { borderColor: colors.pink, borderWidth: 1, borderRadius: 14, padding: 15, alignItems: 'center', marginTop: 12 }, outlineText: { color: colors.pink, fontWeight: '800' }, aboutTitle: { color: colors.cyan, fontSize: 20, fontWeight: '900' }, about: { color: colors.mint, lineHeight: 21, marginTop: 8, marginBottom: 16 }, managementButton: { backgroundColor: colors.cyan, borderRadius: 12, padding: 14, alignItems: 'center' }, managementButtonText: { color: colors.background, fontWeight: '900' }, managementPanel: { backgroundColor: colors.surface, borderRadius: 12, padding: 12, marginTop: 10 }, deleteButton: { borderColor: colors.danger, borderWidth: 1, borderRadius: 14, padding: 15, alignItems: 'center', marginTop: 18 }, deleteText: { color: colors.danger, fontWeight: '900' },
+  profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 18, padding: 18, marginBottom: 26 },
+  avatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#20383b', borderColor: colors.cyan, borderWidth: 1, alignItems: 'center', justifyContent: 'center' }, avatarText: { color: colors.cyan, fontSize: 25, fontWeight: '900' },
+  profileDetails: { flex: 1, marginLeft: 15 }, username: { color: colors.yellow, fontSize: 22, fontWeight: '900' }, email: { color: colors.mint, marginTop: 3 }, statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 }, statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.cyan, marginRight: 6 }, statusText: { color: colors.muted, fontSize: 12, fontWeight: '700' },
+  sectionTitle: { color: colors.cyan, fontSize: 19, fontWeight: '900', marginBottom: 5 }, sectionDescription: { color: colors.mint, lineHeight: 20, marginBottom: 13 },
+  actionGroup: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 16, overflow: 'hidden' }, actionRow: { flexDirection: 'row', alignItems: 'center', padding: 15 }, actionIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: '#182326', alignItems: 'center', justifyContent: 'center', marginRight: 12 }, actionCopy: { flex: 1 }, actionTitle: { color: colors.white, fontSize: 16, fontWeight: '800' }, actionDescription: { color: colors.muted, fontSize: 12, marginTop: 3 }, divider: { height: 1, backgroundColor: '#263337', marginLeft: 65 },
+  managementPanel: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 14, padding: 13, marginTop: 10 }, dangerTitle: { color: colors.danger, marginTop: 27 }, deleteButton: { flexDirection: 'row', alignItems: 'center', borderColor: colors.danger, borderWidth: 1, borderRadius: 14, padding: 15 }, deleteText: { color: colors.danger, fontWeight: '900', fontSize: 15, marginLeft: 12 },
 });

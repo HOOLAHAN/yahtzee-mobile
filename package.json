@@ -22,11 +22,11 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
-    "start:dev-client": "expo start --dev-client",
+    "start": "APP_VARIANT=development expo start",
+    "android": "APP_VARIANT=development expo start --android",
+    "ios": "APP_VARIANT=development expo start --ios",
+    "web": "APP_VARIANT=development expo start --web",
+    "start:dev-client": "APP_VARIANT=development expo start --dev-client",
     "build:ios:development": "npx eas-cli@latest build --platform ios --profile development",
     "build:ios:production": "npx eas-cli@latest build --platform ios --profile production",
     "submit:ios": "npx eas-cli@latest submit --platform ios --profile production --latest",

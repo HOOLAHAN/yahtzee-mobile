@@ -55,6 +55,8 @@ npm run build:ios:development
 
 Open the EAS build link on the phone and install the development build. A new native build is only required after changing native dependencies, plugins, entitlements, or native app configuration.
 
+The development build installs as **Yahtzee Dev** with bundle identifier `com.iainhoolahan.yahtzee.dev`. It can remain installed beside the TestFlight **Yahtzee!** production app, which keeps `com.iainhoolahan.yahtzee`. After adding this variant configuration, create and install one fresh development build; the older development binary used the production identifier and cannot coexist with TestFlight.
+
 ### Normal development
 
 Start Metro and connect the installed development client:

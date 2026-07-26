@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 import { fetchLeaderboard, fetchUserScores, LeaderboardScore } from '../services/scores';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
+import { ScreenHeader } from '../components/ScreenHeader';
 
 export function LeaderboardScreen() {
   const { user } = useAuth();
@@ -22,7 +23,7 @@ export function LeaderboardScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { setLoading(true); void load(); }} tintColor={colors.cyan} />}>
-      <Text style={styles.title}>High Scores</Text>
+      <ScreenHeader title="High Scores" />
       <View style={styles.filterRow}>
         <Pressable onPress={() => setMine(false)} style={[styles.filter, !mine && styles.filterActive]}><Text style={[styles.filterText, !mine && styles.filterTextActive]}>Global</Text></Pressable>
         <Pressable disabled={!user} onPress={() => setMine(true)} style={[styles.filter, mine && styles.filterActive, !user && styles.filterDisabled]}><Text style={[styles.filterText, mine && styles.filterTextActive]}>My Scores</Text></Pressable>
@@ -43,7 +44,6 @@ export function LeaderboardScreen() {
 
 const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 48 },
-  title: { color: colors.yellow, fontSize: 30, fontWeight: '900', textAlign: 'center', marginVertical: 18 },
   filterRow: { flexDirection: 'row', backgroundColor: colors.surface, padding: 4, borderRadius: 12, marginBottom: 18 },
   filter: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 9 }, filterActive: { backgroundColor: colors.cyan }, filterDisabled: { opacity: 0.4 },
   filterText: { color: colors.muted, fontWeight: '800' }, filterTextActive: { color: colors.background },
