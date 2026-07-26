@@ -35,9 +35,8 @@ npm run typecheck
 
 ## Backend
 
-No Lambda function is required for the current feature set: AppSync resolves score operations directly against DynamoDB. Before public release, update the AppSync schema so leaderboard reads can remain public while score creation requires Cognito user-pool authentication.
+No Lambda function is required for the current feature set: AppSync resolves score operations directly against DynamoDB. Leaderboard reads use the public AppSync API key, while score submission requires a valid Cognito user-pool session. The resolver derives the user ID and display name from the signed-in user's token; clients only send the score and cannot submit on another user's behalf.
 
 ## Next releases
 
-- Secure Cognito-authorized score submission
 - EAS Build profiles, icons, splash screen, and store metadata

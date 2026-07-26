@@ -159,7 +159,7 @@ export function GameScreen() {
     if (!user) return Alert.alert('Sign in required', 'Open Account and sign in before submitting.');
     setSubmitting(true);
     try {
-      await submitScore({ userId: user.userId, username: user.username, score: totals[1], timestamp: new Date().toISOString() });
+      await submitScore(totals[1]);
       Alert.alert('Score submitted', `${totals[1]} points were added to the leaderboard.`);
     } catch (error) { Alert.alert('Submission failed', error instanceof Error ? error.message : 'Please try again.'); }
     finally { setSubmitting(false); }

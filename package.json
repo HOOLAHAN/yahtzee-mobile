@@ -28,6 +28,8 @@
     "web": "expo start --web",
     "start:dev-client": "expo start --dev-client",
     "build:ios:development": "npx eas-cli@latest build --platform ios --profile development",
+    "build:ios:production": "npx eas-cli@latest build --platform ios --profile production",
+    "submit:ios": "npx eas-cli@latest submit --platform ios --profile production",
     "typecheck": "tsc --noEmit"
   },
   "private": true

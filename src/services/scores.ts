@@ -18,9 +18,9 @@ const listScores = `
   }
 `;
 
-const createScore = `
-  mutation CreateScore($input: CreateScoreInput!) {
-    createScore(input: $input) { id userId username score timestamp }
+const submitScoreMutation = `
+  mutation SubmitScore($score: Int!) {
+    submitScore(score: $score) { id userId username score timestamp }
   }
 `;
 
@@ -52,13 +52,12 @@ export async function fetchUserScores(userId: string) {
     .slice(0, 10);
 }
 
-export async function submitScore(input: Omit<LeaderboardScore, 'id'>) {
-  const id = `mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+export async function submitScore(score: number) {
   const result = await client.graphql({
-    query: createScore,
-    authMode: 'apiKey',
-    variables: { input: { id, ...input } },
+    query: submitScoreMutation,
+    authMode: 'userPool',
+    variables: { score },
   });
   if (!('data' in result)) throw new Error('Unable to submit score.');
-  return result.data.createScore;
+  return result.data.submitScore;
 }
