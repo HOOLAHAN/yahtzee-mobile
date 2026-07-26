@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
+import { updateMyProfile, usernameAvailable } from '../services/profiles';
 
 type Mode = 'login' | 'register' | 'confirm' | 'requestReset' | 'confirmReset';
 
@@ -12,12 +13,25 @@ export function AccountScreen() {
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const [username, setUsername] = useState(''); const [code, setCode] = useState('');
+  const [firstName, setFirstName] = useState(''); const [lastName, setLastName] = useState('');
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [oldPassword, setOldPassword] = useState(''); const [newPassword, setNewPassword] = useState('');
   const [managementError, setManagementError] = useState(''); const [managementBusy, setManagementBusy] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [editingProfile, setEditingProfile] = useState(false);
+
+  useEffect(() => { if (auth.user) { setUsername(auth.user.username); setFirstName(auth.user.firstName ?? ''); setLastName(auth.user.lastName ?? ''); } }, [auth.user]);
+
+  const saveProfile = async () => {
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(username.trim())) return setManagementError('Username must be 3–20 letters, numbers or underscores.');
+    if (!firstName.trim() || !lastName.trim()) return setManagementError('First name and surname are required.');
+    setManagementBusy(true); setManagementError('');
+    try { await updateMyProfile(username, firstName, lastName); await auth.refreshUser(); setEditingProfile(false); Alert.alert('Profile updated', 'Your public username and private name details have been saved.'); }
+    catch (caught) { setManagementError(caught instanceof Error ? caught.message : 'Unable to update profile.'); }
+    finally { setManagementBusy(false); }
+  };
 
   const changePassword = async () => {
     if (!oldPassword || !newPassword) return setManagementError('Enter your current and new passwords.');
@@ -62,6 +76,11 @@ export function AccountScreen() {
         <View style={styles.statusRow}><View style={styles.statusDot} /><Text style={styles.statusText}>Signed in</Text></View>
       </View>
     </View>
+
+    <Text style={styles.sectionTitle}>Profile</Text>
+    <Text style={styles.sectionDescription}>Your username is public and unique. Your first name and surname remain private.</Text>
+    <Pressable onPress={() => setEditingProfile((value) => !value)} style={styles.actionGroup}><View style={styles.actionRow}><View style={styles.actionIcon}><Ionicons name="person-outline" size={21} color={colors.cyan} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Edit profile</Text><Text style={styles.actionDescription}>{auth.user.firstName && auth.user.lastName ? `${auth.user.firstName} ${auth.user.lastName}` : 'Add your private name details'}</Text></View><Ionicons name={editingProfile ? 'chevron-up' : 'chevron-forward'} size={20} color={colors.muted} /></View></Pressable>
+    {editingProfile && <View style={styles.managementPanel}><TextInput value={username} onChangeText={setUsername} placeholder="Unique username" placeholderTextColor={colors.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} /><TextInput value={firstName} onChangeText={setFirstName} placeholder="First name" placeholderTextColor={colors.muted} autoCapitalize="words" style={styles.input} /><TextInput value={lastName} onChangeText={setLastName} placeholder="Surname" placeholderTextColor={colors.muted} autoCapitalize="words" style={styles.input} /><Pressable disabled={managementBusy} onPress={() => void saveProfile()} style={styles.button}><Text style={styles.buttonText}>{managementBusy ? 'Saving…' : 'Save Profile'}</Text></Pressable></View>}
 
     <Text style={styles.sectionTitle}>Security & access</Text>
     <Text style={styles.sectionDescription}>This account is shared by the Yahtzee website and mobile app.</Text>
@@ -112,7 +131,10 @@ export function AccountScreen() {
     try {
       if (mode === 'login') await auth.login(email, password);
       if (mode === 'register') {
-        const step = await auth.register(email, password, username);
+        if (!/^[A-Za-z0-9_]{3,20}$/.test(username.trim())) throw new Error('Username must be 3–20 letters, numbers or underscores.');
+        if (!firstName.trim() || !lastName.trim()) throw new Error('First name and surname are required.');
+        if (!(await usernameAvailable(username.trim()))) throw new Error('That username is already taken.');
+        const step = await auth.register(email, password, username, firstName, lastName);
         if (step === 'CONFIRM_SIGN_UP') { setPassword(''); setMode('confirm'); }
         else { Alert.alert('Account created', 'You can now sign in.'); setMode('login'); }
       }
@@ -131,7 +153,7 @@ export function AccountScreen() {
 
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
     <ScreenHeader title={headings[mode][0]} subtitle={headings[mode][1]} />
-    {mode === 'register' && <TextInput value={username} onChangeText={setUsername} placeholder="Display name" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="none" />}
+    {mode === 'register' && <><TextInput value={username} onChangeText={setUsername} placeholder="Unique username" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="none" autoCorrect={false} /><TextInput value={firstName} onChangeText={setFirstName} placeholder="First name (private)" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="words" /><TextInput value={lastName} onChangeText={setLastName} placeholder="Surname (private)" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="words" /></>}
     <TextInput value={email} onChangeText={setEmail} placeholder="Email" placeholderTextColor={colors.muted} style={styles.input} keyboardType="email-address" autoCapitalize="none" autoComplete="email" editable={mode !== 'confirm' && mode !== 'confirmReset'} />
     {(mode === 'confirm' || mode === 'confirmReset') && <TextInput value={code} onChangeText={setCode} placeholder="Verification code" placeholderTextColor={colors.muted} style={styles.input} keyboardType="number-pad" />}
     {(mode === 'login' || mode === 'register' || mode === 'confirmReset') && <TextInput value={password} onChangeText={setPassword} placeholder={mode === 'confirmReset' ? 'New password' : 'Password'} placeholderTextColor={colors.muted} style={styles.input} secureTextEntry />}

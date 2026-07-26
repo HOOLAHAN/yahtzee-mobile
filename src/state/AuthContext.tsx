@@ -1,17 +1,21 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { confirmResetPassword, confirmSignUp, deleteUser, fetchUserAttributes, getCurrentUser, resendSignUpCode, resetPassword, signIn, signOut, signUp, updatePassword } from 'aws-amplify/auth';
+import { confirmResetPassword, confirmSignUp, deleteUser, fetchAuthSession, fetchUserAttributes, getCurrentUser, resendSignUpCode, resetPassword, signIn, signOut, signUp, updatePassword } from 'aws-amplify/auth';
+import { deleteMyProfile, updateMyProfile } from '../services/profiles';
 
 interface UserDetails {
   userId: string;
   username: string;
   email?: string;
+  firstName?: string;
+  lastName?: string;
 }
 
 interface AuthValue {
   user: UserDetails | null;
   loading: boolean;
   login(email: string, password: string): Promise<void>;
-  register(email: string, password: string, username: string): Promise<string>;
+  register(email: string, password: string, username: string, firstName: string, lastName: string): Promise<string>;
+  refreshUser(): Promise<void>;
   confirmRegistration(email: string, code: string): Promise<void>;
   resendRegistrationCode(email: string): Promise<void>;
   requestPasswordReset(email: string): Promise<void>;
@@ -34,6 +38,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userId: current.username,
         username: attributes.preferred_username || attributes.email || current.username,
         email: attributes.email,
+        firstName: attributes.given_name,
+        lastName: attributes.family_name,
       });
     } catch {
       setUser(null);
@@ -49,13 +55,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     login: async (email, password) => {
       await signIn({ username: email.trim(), password });
+      const attributes = await fetchUserAttributes();
+      if (attributes.preferred_username && attributes.given_name && attributes.family_name) {
+        await updateMyProfile(attributes.preferred_username, attributes.given_name, attributes.family_name);
+        await fetchAuthSession({ forceRefresh: true });
+      }
       await refresh();
     },
-    register: async (email, password, username) => {
+    register: async (email, password, username, firstName, lastName) => {
       const result = await signUp({
         username: email.trim(),
         password,
-        options: { userAttributes: { email: email.trim(), preferred_username: username.trim() } },
+        options: { userAttributes: { email: email.trim(), preferred_username: username.trim(), given_name: firstName.trim(), family_name: lastName.trim() } },
       });
       return result.nextStep.signUpStep;
     },
@@ -75,9 +86,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await updatePassword({ oldPassword, newPassword });
     },
     deleteAccount: async () => {
+      await deleteMyProfile().catch(() => undefined);
       await deleteUser();
       setUser(null);
     },
+    refreshUser: async () => { await fetchAuthSession({ forceRefresh: true }); await refresh(); },
     logout: async () => {
       await signOut();
       setUser(null);
