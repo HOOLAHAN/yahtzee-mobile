@@ -4,7 +4,7 @@
     "slug": "yahtzee-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/app-icon.png",
     "scheme": "yahtzee",
     "userInterfaceStyle": "dark",
     "ios": {
@@ -17,10 +17,8 @@
     "android": {
       "package": "com.iainhoolahan.yahtzee",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#080B0C",
+        "foregroundImage": "./assets/yahtzee-dice-logo.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -32,6 +30,9 @@
         "projectId": "f301eab8-f15b-45bc-95f3-003588b54842"
       }
     },
-    "owner": "iainhoolahan"
+    "owner": "iainhoolahan",
+    "plugins": [
+      "expo-font"
+    ]
   }
 }
