@@ -20,16 +20,14 @@ const listScores = `
 `;
 
 const submitScoreMutation = `
-  mutation SubmitScore($score: Int!) {
-    submitScore(score: $score) { id userId username score timestamp }
+  mutation SubmitScore($id: ID!, $score: Int!) {
+    submitScore(id: $id, score: $score) { id userId username score timestamp }
   }
 `;
 
 const verifySubmittedScore = `
-  query VerifySubmittedScore {
-    listScores(limit: 100) {
-      items { id userId username score timestamp }
-    }
+  query VerifySubmittedScore($id: ID!) {
+    getScore(id: $id) { id userId username score timestamp }
   }
 `;
 
@@ -70,14 +68,14 @@ const describeError = (error: unknown) => {
   return String(error);
 };
 
-export async function submitScore(score: number, userId: string) {
+export async function submitScore(id: string, score: number, userId: string) {
   const startedAt = Date.now();
   try {
     const session = await fetchAuthSession({ forceRefresh: true });
     if (!session.tokens?.idToken) throw new Error('Your sign-in session has expired. Please sign out and sign in again.');
 
     console.info('[scores.submit] Sending authenticated score', { score, userId, tokenExpiresAt: session.tokens.idToken.payload.exp });
-    const result = await client.graphql({ query: submitScoreMutation, authMode: 'userPool', authToken: session.tokens.idToken.toString(), variables: { score } });
+    const result = await client.graphql({ query: submitScoreMutation, authMode: 'userPool', authToken: session.tokens.idToken.toString(), variables: { id, score } });
     if (!('data' in result) || !result.data.submitScore) throw new Error('AppSync returned no score after submission.');
     console.info('[scores.submit] Score accepted', { id: result.data.submitScore.id, score: result.data.submitScore.score });
     return result.data.submitScore;
@@ -89,10 +87,10 @@ export async function submitScore(score: number, userId: string) {
     // response reaches the client. Verify that ambiguous outcome before showing
     // a failure or allowing a retry that could create a duplicate score.
     try {
-      const verification = await client.graphql({ query: verifySubmittedScore, authMode: 'apiKey' });
-      const recentScores = 'data' in verification ? verification.data.listScores.items.filter(Boolean) as LeaderboardScore[] : [];
-      const committed = recentScores.find((item) => item.userId === userId && item.score === score && Date.parse(item.timestamp) >= startedAt - 15_000);
-      if (committed) {
+      const verification = await client.graphql({ query: verifySubmittedScore, authMode: 'apiKey', variables: { id } });
+      const committed = 'data' in verification ? verification.data.getScore as LeaderboardScore | null : null;
+      const verified = committed?.userId === userId && committed.score === score && Date.parse(committed.timestamp) >= startedAt - 15_000;
+      if (committed && verified) {
         console.warn('[scores.submit] Response failed, but the committed score was verified', { id: committed.id, score });
         return committed;
       }

@@ -44,6 +44,8 @@ interface PersistedGame {
   rollsLeft: number;
   hasRolled: boolean;
   histories: Histories;
+  submitted: boolean;
+  gameId: string;
 }
 
 function PipFace({ value, small = false }: { value: DieFace; small?: boolean }) {
@@ -107,6 +109,7 @@ export function GameScreen() {
   const [showScorecard, setShowScorecard] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [gameId, setGameId] = useState(() => `mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   const [hydrated, setHydrated] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [rollToken, setRollToken] = useState(0);
@@ -136,15 +139,16 @@ export function GameScreen() {
       const saved = JSON.parse(value) as PersistedGame;
       if (!Array.isArray(saved.dice) || saved.dice.length !== 5 || !saved.histories) return;
       setTwoPlayer(Boolean(saved.twoPlayer)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
-      setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories(saved.histories);
+      setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories(saved.histories); setSubmitted(Boolean(saved.submitted));
+      if (saved.gameId) setGameId(saved.gameId);
     }).catch(() => undefined).finally(() => setHydrated(true));
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
-    const state: PersistedGame = { twoPlayer, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories };
+    const state: PersistedGame = { twoPlayer, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, gameId };
     void AsyncStorage.setItem(storageKey, JSON.stringify(state));
-  }, [currentPlayer, dice, hasRolled, held, histories, hydrated, rollsLeft, twoPlayer]);
+  }, [currentPlayer, dice, gameId, hasRolled, held, histories, hydrated, rollsLeft, submitted, twoPlayer]);
 
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -195,6 +199,7 @@ export function GameScreen() {
   const clearGame = () => {
     setHistories({ 1: [], 2: [] }); setCurrentPlayer(1); setViewingPlayer(1); setDice(initialDice); setHeld(new Set());
     setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setSubmitted(false); setShowScorecard(false);
+    setGameId(`mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   };
 
   const reset = () => Alert.alert('Reset game?', 'All scores from this game will be lost.', [
@@ -219,7 +224,7 @@ export function GameScreen() {
   const sendScore = async () => {
     if (!user) return Alert.alert('Sign in required', 'Open Account and sign in before submitting.');
     setSubmitting(true);
-    try { await submitScore(totals[1], user.userId); setSubmitted(true); showToast(`${totals[1]} points submitted to the leaderboard`); }
+    try { await submitScore(gameId, totals[1], user.userId); setSubmitted(true); showToast(`${totals[1]} points submitted to the leaderboard`); }
     catch (error) { Alert.alert('Submission failed', error instanceof Error ? error.message : 'Please try again.'); }
     finally { setSubmitting(false); }
   };
