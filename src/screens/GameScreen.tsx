@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Alert, Animated, Easing, Modal, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Alert, Animated, Easing, Modal, PanResponder, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import * as Haptics from 'expo-haptics';
@@ -207,6 +207,7 @@ export function GameScreen() {
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastY = useRef(new Animated.Value(16)).current;
   const toastAnimation = useRef<Animated.CompositeAnimation | null>(null);
+  const scorecardY = useRef(new Animated.Value(0)).current;
 
   const scores = histories[currentPlayer];
   const used = useMemo(() => new Set<Category>(scores.map((entry) => entry.category)), [scores]);
@@ -276,6 +277,43 @@ export function GameScreen() {
     }
     toastAnimation.current.start();
   };
+
+  const closeScorecard = () => {
+    setShowScorecard(false);
+  };
+
+  const scorecardPanResponder = useMemo(() => PanResponder.create({
+    // The dedicated grabber owns the touch immediately, so the nested
+    // ScrollView cannot take the gesture before the sheet starts moving.
+    onStartShouldSetPanResponder: () => true,
+    onStartShouldSetPanResponderCapture: () => true,
+    onPanResponderGrant: () => scorecardY.stopAnimation(),
+    onPanResponderMove: (_, gesture) => scorecardY.setValue(Math.max(0, gesture.dy)),
+    onPanResponderRelease: (_, gesture) => {
+      if (gesture.dy > 85 || gesture.vy > 0.85) {
+        Animated.timing(scorecardY, {
+          toValue: 650,
+          duration: reduceMotion ? 1 : 190,
+          easing: Easing.in(Easing.cubic),
+          useNativeDriver: true,
+        }).start(closeScorecard);
+      } else {
+        Animated.spring(scorecardY, {
+          toValue: 0,
+          speed: 20,
+          bounciness: 5,
+          useNativeDriver: true,
+        }).start();
+      }
+    },
+    onPanResponderTerminate: () => Animated.spring(scorecardY, {
+      toValue: 0,
+      speed: 20,
+      bounciness: 5,
+      useNativeDriver: true,
+    }).start(),
+    onPanResponderTerminationRequest: () => false,
+  }), [reduceMotion, scorecardY]);
 
   useEffect(() => {
     if (!hydrated || !isComputerTurn || complete || computerTurnRunning.current) return;
@@ -478,12 +516,15 @@ export function GameScreen() {
 
     {selectedCategory && !complete && !isComputerTurn && <View style={styles.lockBar}><View><Text style={styles.lockLabel}>{selectedCategory}</Text><Text style={styles.lockScore}>{scoreCategory(selectedCategory, dice)} points</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Lock in ${selectedCategory} for ${scoreCategory(selectedCategory, dice)} points`} onPress={lockScore} style={styles.lockButton}><Ionicons name="lock-closed" size={18} color={colors.background} /><Text style={styles.lockButtonText}>Lock In</Text></Pressable></View>}
 
-    <Modal transparent animationType="slide" visible={showScorecard} onRequestClose={() => setShowScorecard(false)}>
-      <View style={styles.sheetBackdrop}><Pressable accessibilityLabel="Close scorecard" style={styles.sheetDismissArea} onPress={() => setShowScorecard(false)} /><SafeAreaView style={styles.sheet}>
-        <View style={styles.sheetHandle} /><View style={styles.sheetHeader}><View><Text style={styles.sheetTitle}>Scorecard</Text><Text style={styles.sheetSubtitle}>{twoPlayer ? computerOpponent ? viewingPlayer === 1 ? 'You' : 'Computer' : `Player ${viewingPlayer}` : 'Single Player'} · Round {Math.min(histories[viewingPlayer].length + 1, categories.length)} of {categories.length}</Text></View><Pressable accessibilityLabel="Close scorecard" onPress={() => setShowScorecard(false)} style={styles.sheetClose}><Ionicons name="close" size={23} color={colors.white} /></Pressable></View>
+    <Modal transparent animationType="slide" visible={showScorecard} onShow={() => scorecardY.setValue(0)} onDismiss={() => scorecardY.setValue(0)} onRequestClose={closeScorecard}>
+      <View style={styles.sheetBackdrop}><Pressable accessibilityLabel="Close scorecard" style={styles.sheetDismissArea} onPress={closeScorecard} /><Animated.View style={[styles.sheet, { transform: [{ translateY: scorecardY }] }]}>
+        <SafeAreaView style={styles.sheetSafeArea}>
+        <View collapsable={false} {...scorecardPanResponder.panHandlers} style={styles.sheetGrabber} accessibilityRole="adjustable" accessibilityLabel="Drag down to close scorecard"><View style={styles.sheetHandle} /></View>
+        <View style={styles.sheetHeader}><View><Text style={styles.sheetTitle}>Scorecard</Text><Text style={styles.sheetSubtitle}>{twoPlayer ? computerOpponent ? viewingPlayer === 1 ? 'You' : 'Computer' : `Player ${viewingPlayer}` : 'Single Player'} · Round {Math.min(histories[viewingPlayer].length + 1, categories.length)} of {categories.length}</Text></View><Pressable accessibilityLabel="Close scorecard" onPress={closeScorecard} style={styles.sheetClose}><Ionicons name="close" size={23} color={colors.white} /></Pressable></View>
         {twoPlayer && <View style={styles.scorecardTabs}><Pressable onPress={() => setViewingPlayer(1)} style={[styles.scorecardTab, viewingPlayer === 1 && styles.scorecardTabActive, viewingPlayer === 1 && { borderColor: playerProfiles[0].accent }]}><Text style={[styles.muted, viewingPlayer === 1 && { color: playerProfiles[0].accent }]}>{computerOpponent ? 'You' : 'Player 1'}</Text></Pressable><Pressable onPress={() => setViewingPlayer(2)} style={[styles.scorecardTab, viewingPlayer === 2 && styles.scorecardTabActive, viewingPlayer === 2 && { borderColor: secondPlayerProfile.accent }]}><Text style={[styles.muted, viewingPlayer === 2 && { color: secondPlayerProfile.accent }]}>{computerOpponent ? 'Computer' : 'Player 2'}</Text></Pressable></View>}
         <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false} contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.sheetContent}>{scorecardContent(viewingPlayer)}</ScrollView>
-      </SafeAreaView></View>
+        </SafeAreaView>
+      </Animated.View></View>
     </Modal>
   </View>;
 }
@@ -503,5 +544,5 @@ const styles = StyleSheet.create({
   lockBar: { position: 'absolute', zIndex: 15, left: 14, right: 14, bottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#162326', borderColor: colors.cyan, borderWidth: 1, borderRadius: 14, padding: 13, shadowColor: colors.cyan, shadowOpacity: 0.28, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 10 }, lockLabel: { color: colors.white, fontWeight: '900' }, lockScore: { color: colors.yellow, fontWeight: '800', marginTop: 2 }, lockButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.cyan, borderRadius: 10, paddingHorizontal: 15, paddingVertical: 11 }, lockButtonText: { color: colors.background, fontWeight: '900' },
   actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 7 }, bottomScorecardButton: { flexDirection: 'row', alignItems: 'center', gap: 5, borderColor: '#315a5e', borderWidth: 1, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 6 }, bottomScorecardText: { color: colors.cyan, fontSize: 11, fontWeight: '800' }, resetButton: { flexDirection: 'row', gap: 4, paddingHorizontal: 4, paddingVertical: 3, alignItems: 'center' }, resetText: { color: colors.muted, fontSize: 11, fontWeight: '700' },
   completeCard: { backgroundColor: colors.surface, borderColor: colors.yellow, borderWidth: 1, borderRadius: 20, padding: 20, alignItems: 'center' }, completeIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#2a2d14', alignItems: 'center', justifyContent: 'center' }, completeTitle: { color: colors.yellow, fontSize: 25, fontWeight: '900', marginTop: 12 }, finalScore: { color: colors.cyan, fontSize: 48, fontWeight: '900', marginTop: 4 }, finalTotals: { flexDirection: 'row', gap: 22, marginTop: 14 }, completeCopy: { color: colors.mint, textAlign: 'center', marginTop: 7, marginBottom: 8 }, queueHint: { color: colors.muted, fontSize: 11, textAlign: 'center', marginTop: 7 }, completeActions: { width: '100%', flexDirection: 'row', gap: 10, marginTop: 10 }, secondaryButton: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, borderColor: colors.cyan, borderWidth: 1, borderRadius: 11, padding: 12 }, secondaryText: { color: colors.cyan, fontWeight: '900' }, newGameButton: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, backgroundColor: colors.yellow, borderRadius: 11, padding: 12 }, newGameText: { color: colors.background, fontWeight: '900' }, playerOneText: { color: colors.cyan, fontWeight: '900' }, playerTwoText: { color: colors.pink, fontWeight: '900' }, muted: { color: colors.muted, fontWeight: '800' },
-  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end', paddingHorizontal: 8, paddingBottom: 10 }, sheetDismissArea: { flex: 1 }, sheet: { maxHeight: '86%', backgroundColor: colors.surface, borderRadius: 24, borderColor: '#315a5e', borderWidth: 1, paddingTop: 7, overflow: 'hidden', shadowColor: colors.cyan, shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 5 }, elevation: 16 }, sheetHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: '#45565a', alignSelf: 'center' }, sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 7, paddingBottom: 6 }, sheetTitle: { color: colors.yellow, fontSize: 22, fontWeight: '900' }, sheetSubtitle: { color: colors.muted, fontSize: 10, marginTop: 1 }, sheetClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#263337', alignItems: 'center', justifyContent: 'center' }, sheetScroll: { flexShrink: 1 }, sheetContent: { paddingHorizontal: 16, paddingBottom: 16 }, scorecardTabs: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 6, backgroundColor: colors.background, borderRadius: 9, padding: 2 }, scorecardTab: { flex: 1, alignItems: 'center', padding: 6, borderRadius: 7 }, scorecardTabActive: { backgroundColor: '#20383b' }, scorecardOverview: { flexDirection: 'row', backgroundColor: colors.background, borderRadius: 11, borderColor: '#26383c', borderWidth: 1, paddingVertical: 8 }, overviewItem: { flex: 1, alignItems: 'center' }, overviewDivider: { width: 1, backgroundColor: '#2d3c40' }, overviewLabel: { color: colors.muted, fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }, overviewValue: { color: colors.mint, fontSize: 14, fontWeight: '900', marginTop: 1 }, overviewTotal: { color: colors.yellow, fontSize: 17, fontWeight: '900' }, bonusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 5, paddingVertical: 6, paddingHorizontal: 9, borderRadius: 8, backgroundColor: colors.background }, bonusRowEarned: { backgroundColor: '#163033' }, bonusCopy: { flexDirection: 'row', alignItems: 'center', gap: 5 }, bonusLabel: { color: colors.muted, fontSize: 11 }, bonusValue: { color: colors.muted, fontSize: 11, fontWeight: '800' }, bonusEarned: { color: colors.cyan }, scoreGroupTitle: { color: colors.pink, fontWeight: '900', fontSize: 14, marginTop: 7, marginBottom: 1 }, sheetScoreRow: { flexDirection: 'row', justifyContent: 'space-between', borderBottomColor: '#2a3639', borderBottomWidth: 1, paddingVertical: 5 }, sheetCategory: { color: colors.mint, fontSize: 12 }, sheetScore: { color: colors.yellow, fontSize: 12, fontWeight: '900' }, sheetTotalRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopColor: colors.cyan, borderTopWidth: 1, marginTop: 8, paddingTop: 8, paddingBottom: 2 }, sheetTotalLabel: { color: colors.cyan, fontSize: 16, fontWeight: '900' }, sheetTotal: { color: colors.yellow, fontSize: 20, fontWeight: '900' },
+  sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end', paddingHorizontal: 8, paddingBottom: 10 }, sheetDismissArea: { flex: 1 }, sheet: { maxHeight: '86%', backgroundColor: colors.surface, borderRadius: 24, borderColor: '#315a5e', borderWidth: 1, overflow: 'hidden', shadowColor: colors.cyan, shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 5 }, elevation: 16 }, sheetSafeArea: { flexShrink: 1 }, sheetGrabber: { height: 30, alignItems: 'center', justifyContent: 'center' }, sheetHandle: { width: 44, height: 5, borderRadius: 3, backgroundColor: '#5b7075' }, sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 0, paddingBottom: 6 }, sheetTitle: { color: colors.yellow, fontSize: 22, fontWeight: '900' }, sheetSubtitle: { color: colors.muted, fontSize: 10, marginTop: 1 }, sheetClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#263337', alignItems: 'center', justifyContent: 'center' }, sheetScroll: { flexShrink: 1 }, sheetContent: { paddingHorizontal: 16, paddingBottom: 16 }, scorecardTabs: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 6, backgroundColor: colors.background, borderRadius: 9, padding: 2 }, scorecardTab: { flex: 1, alignItems: 'center', padding: 6, borderRadius: 7 }, scorecardTabActive: { backgroundColor: '#20383b' }, scorecardOverview: { flexDirection: 'row', backgroundColor: colors.background, borderRadius: 11, borderColor: '#26383c', borderWidth: 1, paddingVertical: 8 }, overviewItem: { flex: 1, alignItems: 'center' }, overviewDivider: { width: 1, backgroundColor: '#2d3c40' }, overviewLabel: { color: colors.muted, fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }, overviewValue: { color: colors.mint, fontSize: 14, fontWeight: '900', marginTop: 1 }, overviewTotal: { color: colors.yellow, fontSize: 17, fontWeight: '900' }, bonusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 5, paddingVertical: 6, paddingHorizontal: 9, borderRadius: 8, backgroundColor: colors.background }, bonusRowEarned: { backgroundColor: '#163033' }, bonusCopy: { flexDirection: 'row', alignItems: 'center', gap: 5 }, bonusLabel: { color: colors.muted, fontSize: 11 }, bonusValue: { color: colors.muted, fontSize: 11, fontWeight: '800' }, bonusEarned: { color: colors.cyan }, scoreGroupTitle: { color: colors.pink, fontWeight: '900', fontSize: 14, marginTop: 7, marginBottom: 1 }, sheetScoreRow: { flexDirection: 'row', justifyContent: 'space-between', borderBottomColor: '#2a3639', borderBottomWidth: 1, paddingVertical: 5 }, sheetCategory: { color: colors.mint, fontSize: 12 }, sheetScore: { color: colors.yellow, fontSize: 12, fontWeight: '900' }, sheetTotalRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopColor: colors.cyan, borderTopWidth: 1, marginTop: 8, paddingTop: 8, paddingBottom: 2 }, sheetTotalLabel: { color: colors.cyan, fontSize: 16, fontWeight: '900' }, sheetTotal: { color: colors.yellow, fontSize: 20, fontWeight: '900' },
 });
