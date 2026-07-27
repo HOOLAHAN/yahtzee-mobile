@@ -69,7 +69,6 @@ const describeError = (error: unknown) => {
 };
 
 export async function submitScore(id: string, score: number, userId: string) {
-  const startedAt = Date.now();
   try {
     const session = await fetchAuthSession({ forceRefresh: true });
     if (!session.tokens?.idToken) throw new Error('Your sign-in session has expired. Please sign out and sign in again.');
@@ -89,7 +88,9 @@ export async function submitScore(id: string, score: number, userId: string) {
     try {
       const verification = await client.graphql({ query: verifySubmittedScore, authMode: 'apiKey', variables: { id } });
       const committed = 'data' in verification ? verification.data.getScore as LeaderboardScore | null : null;
-      const verified = committed?.userId === userId && committed.score === score && Date.parse(committed.timestamp) >= startedAt - 15_000;
+      // A game ID is generated once and persisted with its scorecard. Matching
+      // the same user and score makes retries idempotent, even from a queue.
+      const verified = committed?.userId === userId && committed.score === score;
       if (committed && verified) {
         console.warn('[scores.submit] Response failed, but the committed score was verified', { id: committed.id, score });
         return committed;

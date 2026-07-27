@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, Animated, Easing, Modal, Pressable, SafeAreaView, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 import * as Haptics from 'expo-haptics';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
@@ -20,6 +21,7 @@ import {
   upperSectionSubtotal,
 } from '../lib/game';
 import { submitScore } from '../services/scores';
+import { isRetryableScoreError, isScorePending, queueScore, subscribeToPendingScores } from '../services/pendingScores';
 import { useAuth } from '../state/AuthContext';
 import { colors, computerProfile, playerProfiles } from '../theme';
 import { RealDiceScreen } from './RealDiceScreen';
@@ -49,6 +51,7 @@ interface PersistedGame {
   hasRolled: boolean;
   histories: Histories;
   submitted: boolean;
+  queued?: boolean;
   gameId: string;
 }
 
@@ -194,6 +197,7 @@ export function GameScreen() {
   const [showScorecard, setShowScorecard] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [queued, setQueued] = useState(false);
   const [gameId, setGameId] = useState(() => `mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   const [hydrated, setHydrated] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -228,16 +232,29 @@ export function GameScreen() {
       const saved = JSON.parse(value) as PersistedGame;
       if (!Array.isArray(saved.dice) || saved.dice.length !== 5 || !saved.histories) return;
       setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setScorekeeperMode(Boolean(saved.scorekeeperMode)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
-      setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories(saved.histories); setSubmitted(Boolean(saved.submitted));
+      setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories(saved.histories); setSubmitted(Boolean(saved.submitted)); setQueued(Boolean(saved.queued));
       if (saved.gameId) setGameId(saved.gameId);
     }).catch(() => undefined).finally(() => setHydrated(true));
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
-    const state: PersistedGame = { twoPlayer, computerOpponent, scorekeeperMode, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, gameId };
+    const state: PersistedGame = { twoPlayer, computerOpponent, scorekeeperMode, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, queued, gameId };
     void AsyncStorage.setItem(storageKey, JSON.stringify(state));
-  }, [computerOpponent, currentPlayer, dice, gameId, hasRolled, held, histories, hydrated, rollsLeft, scorekeeperMode, submitted, twoPlayer]);
+  }, [computerOpponent, currentPlayer, dice, gameId, hasRolled, held, histories, hydrated, queued, rollsLeft, scorekeeperMode, submitted, twoPlayer]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    let wasPending = queued;
+    const syncQueueState = async () => {
+      const pending = await isScorePending(gameId);
+      if (wasPending && !pending) setSubmitted(true);
+      wasPending = pending;
+      setQueued(pending);
+    };
+    void syncQueueState();
+    return subscribeToPendingScores(() => void syncQueueState());
+  }, [gameId, hydrated, queued]);
 
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -331,7 +348,7 @@ export function GameScreen() {
 
   const clearGame = () => {
     setHistories({ 1: [], 2: [] }); setCurrentPlayer(1); setViewingPlayer(1); setDice(initialDice); setHeld(new Set());
-    setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setSubmitted(false); setShowScorecard(false);
+    setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setSubmitted(false); setQueued(false); setShowScorecard(false);
     setGameId(`mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   };
 
@@ -379,8 +396,26 @@ export function GameScreen() {
   const sendScore = async () => {
     if (!user) return Alert.alert('Sign in required', 'Open Account and sign in before submitting.');
     setSubmitting(true);
-    try { await submitScore(gameId, totals[1], user.userId); setSubmitted(true); showToast(`${totals[1]} points submitted to the leaderboard`); }
-    catch (error) { Alert.alert('Submission failed', error instanceof Error ? error.message : 'Please try again.'); }
+    try {
+      const network = await NetInfo.fetch();
+      if (!network.isConnected || network.isInternetReachable === false) {
+        await queueScore({ id: gameId, score: totals[1], userId: user.userId });
+        setQueued(true);
+        showToast(`${totals[1]} points queued — you can start a new game`);
+        return;
+      }
+      await submitScore(gameId, totals[1], user.userId);
+      setSubmitted(true);
+      showToast(`${totals[1]} points submitted to the leaderboard`);
+    } catch (error) {
+      if (isRetryableScoreError(error)) {
+        await queueScore({ id: gameId, score: totals[1], userId: user.userId });
+        setQueued(true);
+        showToast(`${totals[1]} points queued — it will submit automatically`);
+      } else {
+        Alert.alert('Submission failed', error instanceof Error ? error.message : 'Please try again.');
+      }
+    }
     finally { setSubmitting(false); }
   };
 
@@ -425,7 +460,8 @@ export function GameScreen() {
         <View style={styles.completeIcon}><Ionicons name="trophy-outline" size={34} color={colors.yellow} /></View><Text style={styles.completeTitle}>{winner}</Text>
         {twoPlayer ? <View style={styles.finalTotals}><Text style={[styles.playerOneText, { color: playerProfiles[0].accent }]}>{computerOpponent ? 'You' : 'Player 1'} · {totals[1]}</Text><Text style={[styles.playerTwoText, { color: secondPlayerProfile.accent }]}>{computerOpponent ? 'Computer' : 'Player 2'} · {totals[2]}</Text></View> : <Text style={styles.finalScore}>{totals[1]}</Text>}
         <Text style={styles.completeCopy}>{bonuses[1] ? `Includes the ${upperBonusPoints}-point upper-section bonus.` : 'Final scorecard complete.'}</Text>
-        {(!twoPlayer || computerOpponent) && <Pressable disabled={submitting || submitted} onPress={() => void sendScore()} style={[styles.primaryButton, submitted && styles.disabled]}><Text style={styles.primaryText}>{submitted ? 'Submitted' : submitting ? 'Submitting…' : 'Submit Your Score'}</Text></Pressable>}
+        {(!twoPlayer || computerOpponent) && <Pressable disabled={submitting || submitted || queued} onPress={() => void sendScore()} style={[styles.primaryButton, (submitted || queued) && styles.disabled]}><Text style={styles.primaryText}>{submitted ? 'Submitted' : queued ? 'Queued for Upload' : submitting ? 'Submitting…' : 'Submit Your Score'}</Text></Pressable>}
+        {queued && <Text style={styles.queueHint}>Safe on this device. It will submit when this account is online.</Text>}
         <View style={styles.completeActions}><Pressable onPress={() => void shareScorecard()} style={styles.secondaryButton}><Ionicons name="share-outline" size={19} color={colors.cyan} /><Text style={styles.secondaryText}>Share</Text></Pressable><Pressable onPress={clearGame} style={styles.newGameButton}><Ionicons name="refresh" size={19} color={colors.background} /><Text style={styles.newGameText}>New Game</Text></Pressable></View>
       </View> : <>
         <View style={styles.sectionHeadingRow}><View><Text style={styles.sectionTitle}>{isComputerTurn ? 'Computer strategy' : 'Choose a category'}</Text><Text style={styles.sectionSubtitle}>{isComputerTurn ? 'Watch the computer roll, hold and choose.' : hasRolled ? 'Tap once to preview, then lock it in.' : 'Categories unlock after your first roll.'}</Text></View>{recommendedCategory && !isComputerTurn && <View style={styles.recommendedLegend}><Ionicons name="sparkles" size={14} color={colors.yellow} /><Text style={styles.recommendedLegendText}>Best</Text></View>}</View>
@@ -466,6 +502,6 @@ const styles = StyleSheet.create({
   categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 6 }, category: { width: '32%', minHeight: 46, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, paddingHorizontal: 7, paddingVertical: 7, borderRadius: 9 }, chanceCategory: { marginLeft: '34%' }, recommendedCategory: { borderColor: colors.yellow, shadowColor: colors.yellow, shadowOpacity: 0.35, shadowRadius: 5 }, selectedCategory: { borderColor: colors.pink, borderWidth: 2, backgroundColor: '#34202f', shadowColor: colors.pink, shadowOpacity: 0.4, shadowRadius: 6 }, usedCategory: { opacity: 0.52, backgroundColor: '#151c1e' }, categoryName: { color: colors.mint, fontWeight: '800', fontSize: 10.5, lineHeight: 13, flex: 1, paddingRight: 3 }, usedText: { color: colors.muted }, scoreBadge: { minWidth: 23, height: 23, borderRadius: 12, backgroundColor: '#20383b', alignItems: 'center', justifyContent: 'center' }, scoreBadgeText: { color: colors.cyan, fontWeight: '900', fontSize: 11 }, zeroBadge: { backgroundColor: '#34202f' }, usedBadge: { backgroundColor: '#273034' }, recommendedIcon: { position: 'absolute', top: 2, right: 2 },
   lockBar: { position: 'absolute', zIndex: 15, left: 14, right: 14, bottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#162326', borderColor: colors.cyan, borderWidth: 1, borderRadius: 14, padding: 13, shadowColor: colors.cyan, shadowOpacity: 0.28, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 10 }, lockLabel: { color: colors.white, fontWeight: '900' }, lockScore: { color: colors.yellow, fontWeight: '800', marginTop: 2 }, lockButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.cyan, borderRadius: 10, paddingHorizontal: 15, paddingVertical: 11 }, lockButtonText: { color: colors.background, fontWeight: '900' },
   actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 7 }, bottomScorecardButton: { flexDirection: 'row', alignItems: 'center', gap: 5, borderColor: '#315a5e', borderWidth: 1, borderRadius: 9, paddingHorizontal: 10, paddingVertical: 6 }, bottomScorecardText: { color: colors.cyan, fontSize: 11, fontWeight: '800' }, resetButton: { flexDirection: 'row', gap: 4, paddingHorizontal: 4, paddingVertical: 3, alignItems: 'center' }, resetText: { color: colors.muted, fontSize: 11, fontWeight: '700' },
-  completeCard: { backgroundColor: colors.surface, borderColor: colors.yellow, borderWidth: 1, borderRadius: 20, padding: 20, alignItems: 'center' }, completeIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#2a2d14', alignItems: 'center', justifyContent: 'center' }, completeTitle: { color: colors.yellow, fontSize: 25, fontWeight: '900', marginTop: 12 }, finalScore: { color: colors.cyan, fontSize: 48, fontWeight: '900', marginTop: 4 }, finalTotals: { flexDirection: 'row', gap: 22, marginTop: 14 }, completeCopy: { color: colors.mint, textAlign: 'center', marginTop: 7, marginBottom: 8 }, completeActions: { width: '100%', flexDirection: 'row', gap: 10, marginTop: 10 }, secondaryButton: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, borderColor: colors.cyan, borderWidth: 1, borderRadius: 11, padding: 12 }, secondaryText: { color: colors.cyan, fontWeight: '900' }, newGameButton: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, backgroundColor: colors.yellow, borderRadius: 11, padding: 12 }, newGameText: { color: colors.background, fontWeight: '900' }, playerOneText: { color: colors.cyan, fontWeight: '900' }, playerTwoText: { color: colors.pink, fontWeight: '900' }, muted: { color: colors.muted, fontWeight: '800' },
+  completeCard: { backgroundColor: colors.surface, borderColor: colors.yellow, borderWidth: 1, borderRadius: 20, padding: 20, alignItems: 'center' }, completeIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#2a2d14', alignItems: 'center', justifyContent: 'center' }, completeTitle: { color: colors.yellow, fontSize: 25, fontWeight: '900', marginTop: 12 }, finalScore: { color: colors.cyan, fontSize: 48, fontWeight: '900', marginTop: 4 }, finalTotals: { flexDirection: 'row', gap: 22, marginTop: 14 }, completeCopy: { color: colors.mint, textAlign: 'center', marginTop: 7, marginBottom: 8 }, queueHint: { color: colors.muted, fontSize: 11, textAlign: 'center', marginTop: 7 }, completeActions: { width: '100%', flexDirection: 'row', gap: 10, marginTop: 10 }, secondaryButton: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, borderColor: colors.cyan, borderWidth: 1, borderRadius: 11, padding: 12 }, secondaryText: { color: colors.cyan, fontWeight: '900' }, newGameButton: { flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, backgroundColor: colors.yellow, borderRadius: 11, padding: 12 }, newGameText: { color: colors.background, fontWeight: '900' }, playerOneText: { color: colors.cyan, fontWeight: '900' }, playerTwoText: { color: colors.pink, fontWeight: '900' }, muted: { color: colors.muted, fontWeight: '800' },
   sheetBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.72)', justifyContent: 'flex-end', paddingHorizontal: 8, paddingBottom: 10 }, sheetDismissArea: { flex: 1 }, sheet: { maxHeight: '86%', backgroundColor: colors.surface, borderRadius: 24, borderColor: '#315a5e', borderWidth: 1, paddingTop: 7, overflow: 'hidden', shadowColor: colors.cyan, shadowOpacity: 0.16, shadowRadius: 18, shadowOffset: { width: 0, height: 5 }, elevation: 16 }, sheetHandle: { width: 38, height: 4, borderRadius: 2, backgroundColor: '#45565a', alignSelf: 'center' }, sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 7, paddingBottom: 6 }, sheetTitle: { color: colors.yellow, fontSize: 22, fontWeight: '900' }, sheetSubtitle: { color: colors.muted, fontSize: 10, marginTop: 1 }, sheetClose: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#263337', alignItems: 'center', justifyContent: 'center' }, sheetScroll: { flexShrink: 1 }, sheetContent: { paddingHorizontal: 16, paddingBottom: 16 }, scorecardTabs: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 6, backgroundColor: colors.background, borderRadius: 9, padding: 2 }, scorecardTab: { flex: 1, alignItems: 'center', padding: 6, borderRadius: 7 }, scorecardTabActive: { backgroundColor: '#20383b' }, scorecardOverview: { flexDirection: 'row', backgroundColor: colors.background, borderRadius: 11, borderColor: '#26383c', borderWidth: 1, paddingVertical: 8 }, overviewItem: { flex: 1, alignItems: 'center' }, overviewDivider: { width: 1, backgroundColor: '#2d3c40' }, overviewLabel: { color: colors.muted, fontSize: 9, fontWeight: '800', textTransform: 'uppercase' }, overviewValue: { color: colors.mint, fontSize: 14, fontWeight: '900', marginTop: 1 }, overviewTotal: { color: colors.yellow, fontSize: 17, fontWeight: '900' }, bonusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 5, paddingVertical: 6, paddingHorizontal: 9, borderRadius: 8, backgroundColor: colors.background }, bonusRowEarned: { backgroundColor: '#163033' }, bonusCopy: { flexDirection: 'row', alignItems: 'center', gap: 5 }, bonusLabel: { color: colors.muted, fontSize: 11 }, bonusValue: { color: colors.muted, fontSize: 11, fontWeight: '800' }, bonusEarned: { color: colors.cyan }, scoreGroupTitle: { color: colors.pink, fontWeight: '900', fontSize: 14, marginTop: 7, marginBottom: 1 }, sheetScoreRow: { flexDirection: 'row', justifyContent: 'space-between', borderBottomColor: '#2a3639', borderBottomWidth: 1, paddingVertical: 5 }, sheetCategory: { color: colors.mint, fontSize: 12 }, sheetScore: { color: colors.yellow, fontSize: 12, fontWeight: '900' }, sheetTotalRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopColor: colors.cyan, borderTopWidth: 1, marginTop: 8, paddingTop: 8, paddingBottom: 2 }, sheetTotalLabel: { color: colors.cyan, fontSize: 16, fontWeight: '900' }, sheetTotal: { color: colors.yellow, fontSize: 20, fontWeight: '900' },
 });

@@ -1,13 +1,15 @@
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import './src/services/amplify';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { AboutScreen } from './src/screens/AboutScreen';
 import { GameScreen } from './src/screens/GameScreen';
 import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
-import { AuthProvider } from './src/state/AuthContext';
+import { AuthProvider, useAuth } from './src/state/AuthContext';
+import { flushPendingScores } from './src/services/pendingScores';
 import { colors } from './src/theme';
 
 type Tab = 'game' | 'leaderboard' | 'account' | 'about';
@@ -19,11 +21,28 @@ const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; act
   { key: 'about', label: 'About', icon: 'information-circle-outline', activeIcon: 'information-circle' },
 ];
 
+function PendingScoreSync() {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    if (!user) return;
+    const submitPending = () => void flushPendingScores(user.userId);
+    submitPending();
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      if (state.isConnected && state.isInternetReachable !== false) submitPending();
+    });
+    return unsubscribe;
+  }, [user]);
+
+  return null;
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('game');
 
   return (
     <AuthProvider>
+      <PendingScoreSync />
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="light" />
         <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text style={styles.logo}>Yahtzee!</Text><View style={styles.logoSpacer} /></View>
