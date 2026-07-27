@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { ScreenHeader } from '../components/ScreenHeader';
 import { useAuth } from '../state/AuthContext';
@@ -10,6 +10,7 @@ type Mode = 'login' | 'register' | 'confirm' | 'requestReset' | 'confirmReset';
 
 export function AccountScreen() {
   const auth = useAuth();
+  const scrollRef = useRef<ScrollView>(null);
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
   const [username, setUsername] = useState(''); const [code, setCode] = useState('');
@@ -21,17 +22,21 @@ export function AccountScreen() {
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [editingProfile, setEditingProfile] = useState(false);
+  const [profileError, setProfileError] = useState('');
 
   useEffect(() => { if (auth.user) { setUsername(auth.user.username); setFirstName(auth.user.firstName ?? ''); setLastName(auth.user.lastName ?? ''); } }, [auth.user]);
 
   const saveProfile = async () => {
-    if (!/^[A-Za-z0-9_]{3,20}$/.test(username.trim())) return setManagementError('Username must be 3–20 letters, numbers or underscores.');
-    if (!firstName.trim() || !lastName.trim()) return setManagementError('First name and surname are required.');
-    setManagementBusy(true); setManagementError('');
-    try { await updateMyProfile(username, firstName, lastName); await auth.refreshUser(); setEditingProfile(false); Alert.alert('Profile updated', 'Your public username and private name details have been saved.'); }
-    catch (caught) { setManagementError(caught instanceof Error ? caught.message : 'Unable to update profile.'); }
+    Keyboard.dismiss();
+    if (!/^[A-Za-z0-9_]{3,20}$/.test(username.trim())) return setProfileError('Username must be 3–20 letters, numbers or underscores.');
+    if (!firstName.trim() || !lastName.trim()) return setProfileError('First name and surname are required.');
+    setManagementBusy(true); setProfileError('');
+    try { await updateMyProfile(username.trim(), firstName.trim(), lastName.trim()); await auth.refreshUser(); setEditingProfile(false); Alert.alert('Profile updated', 'Your public username and private name details have been saved.'); }
+    catch (caught) { setProfileError(caught instanceof Error ? caught.message : 'Unable to update profile.'); setTimeout(() => scrollRef.current?.scrollTo({ y: 300, animated: true }), 50); }
     finally { setManagementBusy(false); }
   };
+
+  const focusProfileField = () => setTimeout(() => scrollRef.current?.scrollTo({ y: 300, animated: true }), 100);
 
   const changePassword = async () => {
     if (!oldPassword || !newPassword) return setManagementError('Enter your current and new passwords.');
@@ -66,7 +71,7 @@ export function AccountScreen() {
   };
 
   if (auth.loading) return <ActivityIndicator style={styles.loader} color={colors.cyan} size="large" />;
-  if (auth.user) return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+  if (auth.user) return <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content}>
     <ScreenHeader title="Account" />
     <View style={styles.profileCard}>
       <View style={styles.avatar}><Text style={styles.avatarText}>{auth.user.username.charAt(0).toUpperCase()}</Text></View>
@@ -79,8 +84,8 @@ export function AccountScreen() {
 
     <Text style={styles.sectionTitle}>Profile</Text>
     <Text style={styles.sectionDescription}>Your username is public and unique. Your first name and surname remain private.</Text>
-    <Pressable onPress={() => setEditingProfile((value) => !value)} style={styles.actionGroup}><View style={styles.actionRow}><View style={styles.actionIcon}><Ionicons name="person-outline" size={21} color={colors.cyan} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Edit profile</Text><Text style={styles.actionDescription}>{auth.user.firstName && auth.user.lastName ? `${auth.user.firstName} ${auth.user.lastName}` : 'Add your private name details'}</Text></View><Ionicons name={editingProfile ? 'chevron-up' : 'chevron-forward'} size={20} color={colors.muted} /></View></Pressable>
-    {editingProfile && <View style={styles.managementPanel}><TextInput value={username} onChangeText={setUsername} placeholder="Unique username" placeholderTextColor={colors.muted} autoCapitalize="none" autoCorrect={false} style={styles.input} /><TextInput value={firstName} onChangeText={setFirstName} placeholder="First name" placeholderTextColor={colors.muted} autoCapitalize="words" style={styles.input} /><TextInput value={lastName} onChangeText={setLastName} placeholder="Surname" placeholderTextColor={colors.muted} autoCapitalize="words" style={styles.input} /><Pressable disabled={managementBusy} onPress={() => void saveProfile()} style={styles.button}><Text style={styles.buttonText}>{managementBusy ? 'Saving…' : 'Save Profile'}</Text></Pressable></View>}
+    <Pressable onPress={() => { Keyboard.dismiss(); setProfileError(''); setEditingProfile((value) => !value); }} style={styles.actionGroup}><View style={styles.actionRow}><View style={styles.actionIcon}><Ionicons name="person-outline" size={21} color={colors.cyan} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Edit profile</Text><Text style={styles.actionDescription}>{auth.user.firstName && auth.user.lastName ? `${auth.user.firstName} ${auth.user.lastName}` : 'Add your private name details'}</Text></View><Ionicons name={editingProfile ? 'chevron-up' : 'chevron-forward'} size={20} color={colors.muted} /></View></Pressable>
+    {editingProfile && <View style={styles.managementPanel}><TextInput value={username} onChangeText={(value) => { setUsername(value); setProfileError(''); }} onFocus={focusProfileField} placeholder="Unique username" placeholderTextColor={colors.muted} autoCapitalize="none" autoCorrect={false} returnKeyType="next" style={styles.input} /><TextInput value={firstName} onChangeText={(value) => { setFirstName(value); setProfileError(''); }} onFocus={focusProfileField} placeholder="First name" placeholderTextColor={colors.muted} autoCapitalize="words" returnKeyType="next" style={styles.input} /><TextInput value={lastName} onChangeText={(value) => { setLastName(value); setProfileError(''); }} onFocus={focusProfileField} onSubmitEditing={() => void saveProfile()} placeholder="Surname" placeholderTextColor={colors.muted} autoCapitalize="words" returnKeyType="done" style={styles.input} />{profileError ? <View style={styles.inlineError}><Ionicons name="alert-circle-outline" size={18} color={colors.danger} /><Text style={styles.inlineErrorText}>{profileError}</Text></View> : null}<Pressable disabled={managementBusy} onPress={() => void saveProfile()} style={styles.button}><Text style={styles.buttonText}>{managementBusy ? 'Saving…' : 'Save Profile'}</Text></Pressable></View>}
 
     <Text style={styles.sectionTitle}>Security & access</Text>
     <Text style={styles.sectionDescription}>This account is shared by the Yahtzee website and mobile app.</Text>
@@ -174,5 +179,6 @@ const styles = StyleSheet.create({
   sectionTitle: { color: colors.cyan, fontSize: 19, fontWeight: '900', marginBottom: 5 }, sectionDescription: { color: colors.mint, lineHeight: 20, marginBottom: 13 },
   actionGroup: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 16, overflow: 'hidden' }, actionRow: { flexDirection: 'row', alignItems: 'center', padding: 15 }, actionIcon: { width: 38, height: 38, borderRadius: 11, backgroundColor: '#182326', alignItems: 'center', justifyContent: 'center', marginRight: 12 }, actionCopy: { flex: 1 }, actionTitle: { color: colors.white, fontSize: 16, fontWeight: '800' }, actionDescription: { color: colors.muted, fontSize: 12, marginTop: 3 }, divider: { height: 1, backgroundColor: '#263337', marginLeft: 65 },
   managementPanel: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 14, padding: 13, marginTop: 10 }, dangerTitle: { color: colors.danger, marginTop: 27 }, deleteButton: { flexDirection: 'row', alignItems: 'center', borderColor: colors.danger, borderWidth: 1, borderRadius: 14, padding: 15 }, deleteText: { color: colors.danger, fontWeight: '900', fontSize: 15, marginLeft: 12 },
+  inlineError: { flexDirection: 'row', alignItems: 'flex-start', gap: 7, backgroundColor: '#321b20', borderColor: colors.danger, borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 7 }, inlineErrorText: { color: colors.danger, flex: 1, lineHeight: 19, fontWeight: '700' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.78)', alignItems: 'center', justifyContent: 'center', padding: 24 }, modalCard: { width: '100%', maxWidth: 420, backgroundColor: colors.surface, borderColor: colors.danger, borderWidth: 1, borderRadius: 20, padding: 20 }, modalIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#321b20', alignItems: 'center', justifyContent: 'center', alignSelf: 'center' }, modalTitle: { color: colors.danger, fontSize: 23, fontWeight: '900', textAlign: 'center', marginTop: 12 }, modalCopy: { color: colors.mint, textAlign: 'center', lineHeight: 21, marginTop: 9 }, confirmationLabel: { color: colors.white, fontWeight: '800', marginTop: 20, marginBottom: 8 }, confirmationInput: { borderColor: colors.danger, textAlign: 'center', letterSpacing: 3, fontWeight: '900' }, modalActions: { flexDirection: 'row', gap: 10, marginTop: 5 }, cancelButton: { flex: 1, borderColor: '#405055', borderWidth: 1, borderRadius: 12, padding: 13, alignItems: 'center' }, cancelText: { color: colors.white, fontWeight: '800' }, confirmDeleteButton: { flex: 1.35, backgroundColor: colors.danger, borderRadius: 12, padding: 13, alignItems: 'center' }, confirmDeleteText: { color: colors.background, fontWeight: '900' }, disabledButton: { opacity: 0.35 },
 });

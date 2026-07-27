@@ -17,16 +17,24 @@ async function authenticatedGraphql(query: string, variables?: Record<string, st
   return client.graphql({ query, variables, authMode: 'userPool', authToken: token });
 }
 
+function profileResult<T>(result: unknown, field: string, fallback: string): T {
+  const response = result as { data?: Record<string, T | null>; errors?: Array<{ message?: string }> };
+  const value = response.data?.[field];
+  if (value) return value;
+  const message = response.errors?.map((error) => error.message).filter(Boolean).join('\n');
+  if (message?.includes('username is already taken')) throw new Error('That username is already taken.');
+  if (message) console.error(`[profiles.${field}]`, response.errors);
+  throw new Error(fallback);
+}
+
 export async function getMyProfile(): Promise<UserProfile> {
   const result = await authenticatedGraphql(`query MyProfile { myProfile { ${fields} } }`);
-  if (!('data' in result) || !result.data.myProfile) throw new Error('Unable to load profile.');
-  return result.data.myProfile as UserProfile;
+  return profileResult<UserProfile>(result, 'myProfile', 'Unable to load profile. Please try again.');
 }
 
 export async function updateMyProfile(username: string, firstName: string, lastName: string): Promise<UserProfile> {
   const result = await authenticatedGraphql(`mutation Update($username:String!,$firstName:String!,$lastName:String!){updateMyProfile(username:$username,firstName:$firstName,lastName:$lastName){${fields}}}`, { username, firstName, lastName });
-  if (!('data' in result) || !result.data.updateMyProfile) throw new Error('Unable to update profile.');
-  return result.data.updateMyProfile as UserProfile;
+  return profileResult<UserProfile>(result, 'updateMyProfile', 'Unable to update profile. Please try again.');
 }
 
 export async function deleteMyProfile() { await authenticatedGraphql('mutation DeleteProfile { deleteMyProfile }'); }
