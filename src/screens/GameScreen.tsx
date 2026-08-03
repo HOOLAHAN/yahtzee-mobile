@@ -25,6 +25,7 @@ import { isRetryableScoreError, isScorePending, queueScore, subscribeToPendingSc
 import { useAuth } from '../state/AuthContext';
 import { colors, computerProfile, playerProfiles } from '../theme';
 import { RealDiceScreen } from './RealDiceScreen';
+import { VirtualDiceScreen } from './VirtualDiceScreen';
 
 const initialDice: DieFace[] = [1, 1, 1, 1, 1];
 const storageKey = 'yahtzee.active-game.v1';
@@ -38,12 +39,13 @@ const categoryLabels: Record<Category, string> = {
 };
 type Player = 1 | 2;
 type Histories = Record<Player, ScoreEntry[]>;
-type GameMode = 'solo' | 'computer' | 'pass' | 'real';
+type GameMode = 'solo' | 'computer' | 'pass' | 'virtual' | 'real';
 
 interface PersistedGame {
   twoPlayer: boolean;
   computerOpponent?: boolean;
   scorekeeperMode?: boolean;
+  virtualDiceMode?: boolean;
   currentPlayer: Player;
   dice: DieFace[];
   held: number[];
@@ -62,7 +64,7 @@ function PipFace({ value, small = false }: { value: DieFace; small?: boolean }) 
 function GameModePicker({ active, onChange }: { active: GameMode; onChange: (mode: GameMode) => void }) {
   const options: { mode: GameMode; label: string }[] = [
     { mode: 'solo', label: 'Solo' }, { mode: 'computer', label: 'Computer' },
-    { mode: 'pass', label: 'Pass & Play' }, { mode: 'real', label: 'Real Dice' },
+    { mode: 'pass', label: 'Pass & Play' }, { mode: 'virtual', label: 'Virtual Dice' }, { mode: 'real', label: 'Real Dice' },
   ];
   return <View style={styles.modePicker}>{options.map((option) => <Pressable key={option.mode} accessibilityRole="button" accessibilityState={{ selected: active === option.mode }} onPress={() => onChange(option.mode)} style={[styles.mode, active === option.mode && styles.modeActive]}><Text style={[styles.modeText, active === option.mode && styles.modeTextActive]}>{option.label}</Text></Pressable>)}</View>;
 }
@@ -186,6 +188,7 @@ export function GameScreen() {
   const [twoPlayer, setTwoPlayer] = useState(false);
   const [computerOpponent, setComputerOpponent] = useState(false);
   const [scorekeeperMode, setScorekeeperMode] = useState(false);
+  const [virtualDiceMode, setVirtualDiceMode] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState<Player>(1);
   const [viewingPlayer, setViewingPlayer] = useState<Player>(1);
   const [dice, setDice] = useState<DieFace[]>(initialDice);
@@ -232,7 +235,7 @@ export function GameScreen() {
       if (!value) return;
       const saved = JSON.parse(value) as PersistedGame;
       if (!Array.isArray(saved.dice) || saved.dice.length !== 5 || !saved.histories) return;
-      setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setScorekeeperMode(Boolean(saved.scorekeeperMode)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
+      setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setScorekeeperMode(Boolean(saved.scorekeeperMode)); setVirtualDiceMode(Boolean(saved.virtualDiceMode)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
       setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories(saved.histories); setSubmitted(Boolean(saved.submitted)); setQueued(Boolean(saved.queued));
       if (saved.gameId) setGameId(saved.gameId);
     }).catch(() => undefined).finally(() => setHydrated(true));
@@ -240,9 +243,9 @@ export function GameScreen() {
 
   useEffect(() => {
     if (!hydrated) return;
-    const state: PersistedGame = { twoPlayer, computerOpponent, scorekeeperMode, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, queued, gameId };
+    const state: PersistedGame = { twoPlayer, computerOpponent, scorekeeperMode, virtualDiceMode, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, queued, gameId };
     void AsyncStorage.setItem(storageKey, JSON.stringify(state));
-  }, [computerOpponent, currentPlayer, dice, gameId, hasRolled, held, histories, hydrated, queued, rollsLeft, scorekeeperMode, submitted, twoPlayer]);
+  }, [computerOpponent, currentPlayer, dice, gameId, hasRolled, held, histories, hydrated, queued, rollsLeft, scorekeeperMode, submitted, twoPlayer, virtualDiceMode]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -394,9 +397,9 @@ export function GameScreen() {
     { text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: clearGame },
   ]);
 
-  const applyMode = (mode: GameMode) => { setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); clearGame(); };
+  const applyMode = (mode: GameMode) => { setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); setVirtualDiceMode(mode === 'virtual'); clearGame(); };
   const changeMode = (mode: GameMode) => {
-    const activeMode = scorekeeperMode ? 'real' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
+    const activeMode = scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
     if (mode === activeMode) return;
     if (histories[1].length || histories[2].length) Alert.alert('Start a new game?', 'Changing mode resets the current scorecard.', [
       { text: 'Cancel', style: 'cancel' }, { text: 'Change Mode', style: 'destructive', onPress: () => applyMode(mode) },
@@ -478,8 +481,9 @@ export function GameScreen() {
   </>;
   };
 
-  const activeMode: GameMode = scorekeeperMode ? 'real' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
+  const activeMode: GameMode = scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
   if (scorekeeperMode) return <View style={styles.gameContainer}><View style={styles.scorekeeperModeBar}><GameModePicker active={activeMode} onChange={changeMode} /></View><RealDiceScreen /></View>;
+  if (virtualDiceMode) return <View style={styles.gameContainer}><View style={styles.scorekeeperModeBar}><GameModePicker active={activeMode} onChange={changeMode} /></View><VirtualDiceScreen /></View>;
 
   return <View style={styles.gameContainer}>
     <Animated.View accessibilityLiveRegion="polite" pointerEvents="none" style={[styles.toast, { opacity: toastOpacity, transform: [{ translateY: toastY }] }]}><Ionicons name="checkmark-circle" size={22} color={colors.background} /><Text style={styles.toastText}>{toastMessage}</Text></Animated.View>
@@ -502,19 +506,19 @@ export function GameScreen() {
         {queued && <Text style={styles.queueHint}>Safe on this device. It will submit when this account is online.</Text>}
         <View style={styles.completeActions}><Pressable onPress={() => void shareScorecard()} style={styles.secondaryButton}><Ionicons name="share-outline" size={19} color={colors.cyan} /><Text style={styles.secondaryText}>Share</Text></Pressable><Pressable onPress={clearGame} style={styles.newGameButton}><Ionicons name="refresh" size={19} color={colors.background} /><Text style={styles.newGameText}>New Game</Text></Pressable></View>
       </View> : <>
-        <View style={styles.sectionHeadingRow}><View><Text style={styles.sectionTitle}>{isComputerTurn ? 'Computer strategy' : 'Choose a category'}</Text><Text style={styles.sectionSubtitle}>{isComputerTurn ? 'Watch the computer roll, hold and choose.' : hasRolled ? 'Tap once to preview, then lock it in.' : 'Categories unlock after your first roll.'}</Text></View>{recommendedCategory && !isComputerTurn && <View style={styles.recommendedLegend}><Ionicons name="sparkles" size={14} color={colors.yellow} /><Text style={styles.recommendedLegendText}>Best</Text></View>}</View>
+        <View style={styles.sectionHeadingRow}><View><Text style={[styles.sectionTitle, { color: currentProfile.accent }]}>{isComputerTurn ? 'Computer strategy' : 'Choose a category'}</Text><Text style={styles.sectionSubtitle}>{isComputerTurn ? 'Watch the computer roll, hold and choose.' : hasRolled ? 'Tap once to preview, then lock it in.' : 'Categories unlock after your first roll.'}</Text></View>{recommendedCategory && !isComputerTurn && <View style={styles.recommendedLegend}><Ionicons name="sparkles" size={14} color={colors.yellow} /><Text style={styles.recommendedLegendText}>Best</Text></View>}</View>
         <View style={styles.categoryGrid}>{categories.map((category) => {
           const entry = scores.find((item) => item.category === category); const preview = hasRolled ? scoreCategory(category, dice) : 0;
           const selected = selectedCategory === category; const recommended = recommendedCategory === category && !entry;
-          return <Pressable accessibilityRole="button" accessibilityLabel={`${category}, ${entry ? `${entry.score} points, used` : `${preview} points`}${recommended ? ', best available score' : ''}`} accessibilityState={{ disabled: !hasRolled || Boolean(entry) || isComputerTurn, selected }} key={category} disabled={!hasRolled || Boolean(entry) || isComputerTurn} onPress={() => setSelectedCategory(category)} style={[styles.category, category === 'Chance' && styles.chanceCategory, entry && styles.usedCategory, recommended && !isComputerTurn && styles.recommendedCategory, selected && styles.selectedCategory]}>
+          return <Pressable accessibilityRole="button" accessibilityLabel={`${category}, ${entry ? `${entry.score} points, used` : `${preview} points`}${recommended ? ', best available score' : ''}`} accessibilityState={{ disabled: !hasRolled || Boolean(entry) || isComputerTurn, selected }} key={category} disabled={!hasRolled || Boolean(entry) || isComputerTurn} onPress={() => setSelectedCategory(category)} style={[styles.category, category === 'Chance' && styles.chanceCategory, entry && styles.usedCategory, recommended && !isComputerTurn && styles.recommendedCategory, selected && styles.selectedCategory, selected && { borderColor: currentProfile.accent, backgroundColor: currentProfile.soft, shadowColor: currentProfile.accent }]}>
             <Text numberOfLines={2} style={[styles.categoryName, entry && styles.usedText]}>{categoryLabels[category]}</Text><View style={[styles.scoreBadge, { backgroundColor: currentProfile.soft }, entry && styles.usedBadge, preview === 0 && !entry && styles.zeroBadge]}><Text style={[styles.scoreBadgeText, { color: currentProfile.accent }, entry && styles.usedText]}>{entry?.score ?? preview}</Text></View>{recommended && <Ionicons name="sparkles" size={12} color={colors.yellow} style={styles.recommendedIcon} />}
           </Pressable>;
         })}</View>
-        <View style={styles.actions}><Pressable accessibilityRole="button" accessibilityLabel="Open scorecard" onPress={() => setShowScorecard(true)} style={styles.bottomScorecardButton}><Ionicons name="list-outline" size={17} color={colors.cyan} /><Text style={styles.bottomScorecardText}>Scorecard</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Reset game" onPress={reset} hitSlop={10} style={styles.resetButton}><Ionicons name="refresh-outline" size={14} color={colors.muted} /><Text style={styles.resetText}>Reset</Text></Pressable></View>
+        <View style={styles.actions}><Pressable accessibilityRole="button" accessibilityLabel="Open scorecard" onPress={() => setShowScorecard(true)} style={[styles.bottomScorecardButton, { borderColor: currentProfile.accent }]}><Ionicons name="list-outline" size={17} color={currentProfile.accent} /><Text style={[styles.bottomScorecardText, { color: currentProfile.accent }]}>Scorecard</Text></Pressable><Pressable accessibilityRole="button" accessibilityLabel="Reset game" onPress={reset} hitSlop={10} style={styles.resetButton}><Ionicons name="refresh-outline" size={14} color={colors.muted} /><Text style={styles.resetText}>Reset</Text></Pressable></View>
       </>}
     </ScrollView>
 
-    {selectedCategory && !complete && !isComputerTurn && <View style={styles.lockBar}><View><Text style={styles.lockLabel}>{selectedCategory}</Text><Text style={styles.lockScore}>{scoreCategory(selectedCategory, dice)} points</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Lock in ${selectedCategory} for ${scoreCategory(selectedCategory, dice)} points`} onPress={lockScore} style={styles.lockButton}><Ionicons name="lock-closed" size={18} color={colors.background} /><Text style={styles.lockButtonText}>Lock In</Text></Pressable></View>}
+    {selectedCategory && !complete && !isComputerTurn && <View style={[styles.lockBar, { borderColor: currentProfile.accent, shadowColor: currentProfile.accent }]}><View><Text style={styles.lockLabel}>{selectedCategory}</Text><Text style={[styles.lockScore, { color: currentProfile.score }]}>{scoreCategory(selectedCategory, dice)} points</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Lock in ${selectedCategory} for ${scoreCategory(selectedCategory, dice)} points`} onPress={lockScore} style={[styles.lockButton, { backgroundColor: currentProfile.accent }]}><Ionicons name="lock-closed" size={18} color={colors.background} /><Text style={styles.lockButtonText}>Lock In</Text></Pressable></View>}
 
     <Modal transparent animationType="slide" visible={showScorecard} onShow={() => scorecardY.setValue(0)} onDismiss={() => scorecardY.setValue(0)} onRequestClose={closeScorecard}>
       <View style={styles.sheetBackdrop}><Pressable accessibilityLabel="Close scorecard" style={styles.sheetDismissArea} onPress={closeScorecard} /><Animated.View style={[styles.sheet, { transform: [{ translateY: scorecardY }] }]}>

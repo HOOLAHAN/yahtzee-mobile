@@ -46,11 +46,11 @@ export function RealDiceScreen() {
     void Promise.all([AsyncStorage.getItem(namesKey), AsyncStorage.getItem(gameKey)]).then(([savedNames, savedGame]) => {
       if (savedNames) {
         const names = JSON.parse(savedNames) as string[];
-        if (names.length) setSetupNames(names.slice(0, 6));
+        if (names.length) setSetupNames(names.slice(0, 10));
       }
       if (savedGame) {
         const game = JSON.parse(savedGame) as SavedRealGame;
-        if (game.players?.length) { setPlayers(game.players); setCurrentPlayer(Math.min(game.currentPlayer, game.players.length - 1)); }
+        if (game.players?.length) { const restoredPlayers = game.players.slice(0, 10); setPlayers(restoredPlayers); setCurrentPlayer(Math.min(game.currentPlayer, restoredPlayers.length - 1)); }
       }
     }).catch(() => undefined).finally(() => setHydrated(true));
   }, []);
@@ -68,7 +68,7 @@ export function RealDiceScreen() {
   const leaders = complete ? [...players].sort((a, b) => totalScore(b.scores) - totalScore(a.scores)) : [];
 
   const changePlayerCount = (delta: number) => setSetupNames((current) => {
-    const length = Math.max(1, Math.min(6, current.length + delta));
+    const length = Math.max(1, Math.min(10, current.length + delta));
     return length > current.length ? [...current, `Player ${length}`] : current.slice(0, length);
   });
 
@@ -99,7 +99,7 @@ export function RealDiceScreen() {
   if (!players.length) return <KeyboardAvoidingView style={styles.keyboardArea} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={76}><ScrollView ref={setupScrollRef} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={styles.setup}>
     <View style={styles.setupIcon}><Ionicons name="people-outline" size={30} color={colors.cyan} /></View>
     <Text style={styles.title}>Real Dice</Text><Text style={styles.subtitle}>Roll physical dice. This app keeps everyone’s scorecard.</Text>
-    <View style={styles.countRow}><Pressable accessibilityLabel="Remove player" disabled={setupNames.length === 1} onPress={() => changePlayerCount(-1)} style={styles.countButton}><Ionicons name="remove" size={22} color={colors.cyan} /></Pressable><View><Text style={styles.count}>{setupNames.length}</Text><Text style={styles.countLabel}>{setupNames.length === 1 ? 'player' : 'players'}</Text></View><Pressable accessibilityLabel="Add player" disabled={setupNames.length === 6} onPress={() => changePlayerCount(1)} style={styles.countButton}><Ionicons name="add" size={22} color={colors.cyan} /></Pressable></View>
+    <View style={styles.countRow}><Pressable accessibilityLabel="Remove player" disabled={setupNames.length === 1} onPress={() => changePlayerCount(-1)} style={[styles.countButton, setupNames.length === 1 && styles.disabled]}><Ionicons name="remove" size={22} color={colors.cyan} /></Pressable><View><Text style={styles.count}>{setupNames.length}</Text><Text style={styles.countLabel}>{setupNames.length === 1 ? 'player' : 'players'}</Text></View><Pressable accessibilityLabel="Add player" disabled={setupNames.length === 10} onPress={() => changePlayerCount(1)} style={[styles.countButton, setupNames.length === 10 && styles.disabled]}><Ionicons name="add" size={22} color={colors.cyan} /></Pressable></View>
     <View style={styles.nameList}>{setupNames.map((name, index) => { const profile = playerProfiles[index]; return <View key={index} style={styles.nameRow}><View style={[styles.playerNumber, { backgroundColor: profile.soft, borderColor: profile.accent }]}><Text style={[styles.playerNumberText, { color: profile.accent }]}>{index + 1}</Text></View><TextInput accessibilityLabel={`Player ${index + 1} name`} value={name} onFocus={() => setTimeout(() => setupScrollRef.current?.scrollTo({ y: 135 + index * 55, animated: true }), 120)} onChangeText={(value) => setSetupNames((current) => current.map((item, itemIndex) => itemIndex === index ? value : item))} placeholder={`Player ${index + 1}`} placeholderTextColor={colors.muted} maxLength={18} returnKeyType={index === setupNames.length - 1 ? 'done' : 'next'} style={[styles.nameInput, { borderColor: profile.accent }]} /></View>; })}</View>
     <Pressable onPress={startGame} style={styles.startButton}><Ionicons name="play" size={18} color={colors.background} /><Text style={styles.startText}>Start Scorecard</Text></Pressable>
     <Text style={styles.remembered}><Ionicons name="bookmark-outline" size={13} color={colors.muted} /> Names are remembered for your next game.</Text>
