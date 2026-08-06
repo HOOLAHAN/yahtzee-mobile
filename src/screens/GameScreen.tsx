@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Alert, Animated, Easing, Modal, PanResponder, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Alert, Animated, AppState, Easing, Modal, PanResponder, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
@@ -27,7 +27,7 @@ import { useAuth } from '../state/AuthContext';
 import { colors, computerProfile, playerProfiles } from '../theme';
 import { RealDiceScreen } from './RealDiceScreen';
 import { VirtualDiceScreen } from './VirtualDiceScreen';
-import { dailyDiceForThrow, utcDateKey } from '../lib/dailyChallenge';
+import { dailyDiceForThrow, localDateKey } from '../lib/dailyChallenge';
 import { resultMetrics } from '../lib/engagement';
 import { createGameResult, fetchDailyResults, GameResult } from '../services/gameResults';
 
@@ -208,7 +208,7 @@ export function GameScreen({ chooserRequest = 0, dailyLaunchRequest = 0, onHeade
   const [scorekeeperMode, setScorekeeperMode] = useState(false);
   const [virtualDiceMode, setVirtualDiceMode] = useState(false);
   const [dailyMode, setDailyMode] = useState(false);
-  const [dailyDate, setDailyDate] = useState(utcDateKey);
+  const [dailyDate, setDailyDate] = useState(localDateKey);
   const [dailyThrowIndex, setDailyThrowIndex] = useState(0);
   const [progressRecorded, setProgressRecorded] = useState(false);
   const [yahtzeeOnFinalRoll, setYahtzeeOnFinalRoll] = useState(false);
@@ -302,7 +302,9 @@ export function GameScreen({ chooserRequest = 0, dailyLaunchRequest = 0, onHeade
       if (!value) return;
       const saved = JSON.parse(value) as PersistedGame;
       if (!Array.isArray(saved.dice) || saved.dice.length !== 5 || !saved.histories) return;
-      setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setScorekeeperMode(Boolean(saved.scorekeeperMode)); setVirtualDiceMode(Boolean(saved.virtualDiceMode)); setDailyMode(Boolean(saved.dailyMode)); setDailyDate(saved.dailyDate || utcDateKey()); setDailyThrowIndex(saved.dailyThrowIndex ?? 0); setProgressRecorded(Boolean(saved.progressRecorded)); setYahtzeeOnFinalRoll(Boolean(saved.yahtzeeOnFinalRoll)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
+      const today = localDateKey();
+      if (saved.dailyMode && saved.dailyDate !== today) { setDailyMode(true); setDailyDate(today); return; }
+      setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setScorekeeperMode(Boolean(saved.scorekeeperMode)); setVirtualDiceMode(Boolean(saved.virtualDiceMode)); setDailyMode(Boolean(saved.dailyMode)); setDailyDate(saved.dailyDate || today); setDailyThrowIndex(saved.dailyThrowIndex ?? 0); setProgressRecorded(Boolean(saved.progressRecorded)); setYahtzeeOnFinalRoll(Boolean(saved.yahtzeeOnFinalRoll)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
       setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories(saved.histories); setSubmitted(Boolean(saved.submitted)); setQueued(Boolean(saved.queued));
       if (saved.gameId) setGameId(saved.gameId);
     }).catch(() => undefined).finally(() => setHydrated(true));
@@ -488,7 +490,7 @@ export function GameScreen({ chooserRequest = 0, dailyLaunchRequest = 0, onHeade
 
   const clearGame = () => {
     setHistories({ 1: [], 2: [] }); setCurrentPlayer(1); setViewingPlayer(1); setDice(initialDice); setHeld(new Set());
-    setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setSubmitted(false); setQueued(false); setShowScorecard(false); setDailyThrowIndex(0); setDailyDate(utcDateKey()); setProgressRecorded(false); setYahtzeeOnFinalRoll(false); setDailyStanding('');
+    setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setSubmitted(false); setQueued(false); setShowScorecard(false); setDailyThrowIndex(0); setDailyDate(localDateKey()); setProgressRecorded(false); setYahtzeeOnFinalRoll(false); setDailyStanding('');
     setGameId(`mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   };
 
@@ -499,12 +501,24 @@ export function GameScreen({ chooserRequest = 0, dailyLaunchRequest = 0, onHeade
   const applyMode = (mode: GameMode) => { setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); setVirtualDiceMode(mode === 'virtual'); setDailyMode(mode === 'daily'); setShowModeChooser(false); clearGame(); };
   const changeMode = (mode: GameMode) => {
     const activeMode = scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : dailyMode ? 'daily' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
-    if (mode === activeMode) return setShowModeChooser(false);
+    if (mode === activeMode) {
+      if (mode === 'daily' && dailyDate !== localDateKey()) clearGame();
+      return setShowModeChooser(false);
+    }
     if (histories[1].length || histories[2].length) Alert.alert('Start a new game?', 'Changing mode resets the current scorecard.', [
       { text: 'Cancel', style: 'cancel' }, { text: 'Change Mode', style: 'destructive', onPress: () => applyMode(mode) },
     ]); else applyMode(mode);
   };
   useEffect(() => { if (dailyLaunchRequest > 0) changeMode('daily'); }, [dailyLaunchRequest]);
+  useEffect(() => {
+    if (!dailyMode) return;
+    const advanceDailyChallenge = () => { if (dailyDate !== localDateKey()) clearGame(); };
+    const timer = setInterval(advanceDailyChallenge, 30_000);
+    const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') advanceDailyChallenge(); });
+    return () => { clearInterval(timer); subscription.remove(); };
+    // clearGame intentionally resets the mounted challenge when its local day changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dailyDate, dailyMode]);
 
   const shareScorecard = async () => {
     if (!complete) return;

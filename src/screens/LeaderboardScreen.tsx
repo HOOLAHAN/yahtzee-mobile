@@ -5,7 +5,7 @@ import { fetchLeaderboard, fetchUserScores, LeaderboardScore } from '../services
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
 import { fetchAllDailyResults, fetchDailyResults, fetchSoloResults, fetchWeeklyResults, GameResult } from '../services/gameResults';
-import { utcDateKey } from '../lib/dailyChallenge';
+import { localDateKey } from '../lib/dailyChallenge';
 
 type Period = 'today' | 'week' | 'all';
 type Competition = 'solo' | 'daily';
@@ -29,7 +29,7 @@ export function LeaderboardScreen() {
         const detailById = new Map(details.map((result) => [result.id, result]));
         setScores(legacy.map((score) => ({ ...score, ...detailById.get(score.id) })) as LeaderboardEntry[]);
       } else {
-        const daily = period === 'today' ? await fetchDailyResults(utcDateKey()) : period === 'week' ? (await fetchWeeklyResults()).map((entry) => ({ ...entry, aggregate: true })) : await fetchAllDailyResults();
+        const daily = period === 'today' ? await fetchDailyResults(localDateKey()) : period === 'week' ? (await fetchWeeklyResults()).map((entry) => ({ ...entry, aggregate: true })) : await fetchAllDailyResults();
         const visible = mine && user ? daily.filter((score) => score.userId === user.userId) : daily;
         setScores(visible.slice(0, 100) as LeaderboardEntry[]);
       }

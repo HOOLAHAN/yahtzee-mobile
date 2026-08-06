@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { currentDailyStreak } from '../lib/engagement';
-import { utcDateKey } from '../lib/dailyChallenge';
+import { localDateKey } from '../lib/dailyChallenge';
 import { fetchMyGameResults, GameResult } from '../services/gameResults';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
@@ -41,7 +41,7 @@ export function ProgressScreen() {
   }, [user]);
   useEffect(() => { void load(); }, [load]);
   const dailyDates = useMemo(() => results.filter((result) => result.mode === 'DAILY' && result.challengeDate).map((result) => result.challengeDate!), [results]);
-  const streak = currentDailyStreak(dailyDates, utcDateKey());
+  const streak = currentDailyStreak(dailyDates, localDateKey());
   const unlocked = achievements.filter((achievement) => achievement.unlocked(results, streak)).length;
   const best = results.reduce((value, result) => Math.max(value, result.score), 0);
   const average = results.length ? Math.round(results.reduce((sum, result) => sum + result.score, 0) / results.length) : 0;

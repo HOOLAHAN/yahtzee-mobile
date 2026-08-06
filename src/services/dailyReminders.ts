@@ -10,7 +10,7 @@ Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
 });
 
-const dateKey = (date: Date) => date.toISOString().slice(0, 10);
+const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
 async function cancelScheduledReminders() {
   const rawIds = await AsyncStorage.getItem(reminderIdsKey);
