@@ -26,6 +26,9 @@ import { useAuth } from '../state/AuthContext';
 import { colors, computerProfile, playerProfiles } from '../theme';
 import { RealDiceScreen } from './RealDiceScreen';
 import { VirtualDiceScreen } from './VirtualDiceScreen';
+import { dailyDiceForThrow, utcDateKey } from '../lib/dailyChallenge';
+import { resultMetrics } from '../lib/engagement';
+import { createGameResult, fetchDailyResults } from '../services/gameResults';
 
 const initialDice: DieFace[] = [1, 1, 1, 1, 1];
 const storageKey = 'yahtzee.active-game.v1';
@@ -39,13 +42,18 @@ const categoryLabels: Record<Category, string> = {
 };
 type Player = 1 | 2;
 type Histories = Record<Player, ScoreEntry[]>;
-type GameMode = 'solo' | 'computer' | 'pass' | 'virtual' | 'real';
+type GameMode = 'solo' | 'daily' | 'computer' | 'pass' | 'virtual' | 'real';
 
 interface PersistedGame {
   twoPlayer: boolean;
   computerOpponent?: boolean;
   scorekeeperMode?: boolean;
   virtualDiceMode?: boolean;
+  dailyMode?: boolean;
+  dailyDate?: string;
+  dailyThrowIndex?: number;
+  progressRecorded?: boolean;
+  yahtzeeOnFinalRoll?: boolean;
   currentPlayer: Player;
   dice: DieFace[];
   held: number[];
@@ -63,7 +71,7 @@ function PipFace({ value, small = false }: { value: DieFace; small?: boolean }) 
 
 function GameModePicker({ active, onChange }: { active: GameMode; onChange: (mode: GameMode) => void }) {
   const options: { mode: GameMode; label: string }[] = [
-    { mode: 'solo', label: 'Solo' }, { mode: 'computer', label: 'Computer' },
+    { mode: 'solo', label: 'Solo' }, { mode: 'daily', label: 'Daily' }, { mode: 'computer', label: 'Computer' },
     { mode: 'pass', label: 'Pass & Play' }, { mode: 'virtual', label: 'Virtual Dice' }, { mode: 'real', label: 'Real Dice' },
   ];
   return <View style={styles.modePicker}>{options.map((option) => <Pressable key={option.mode} accessibilityRole="button" accessibilityState={{ selected: active === option.mode }} onPress={() => onChange(option.mode)} style={[styles.mode, active === option.mode && styles.modeActive]}><Text style={[styles.modeText, active === option.mode && styles.modeTextActive]}>{option.label}</Text></Pressable>)}</View>;
@@ -189,6 +197,12 @@ export function GameScreen() {
   const [computerOpponent, setComputerOpponent] = useState(false);
   const [scorekeeperMode, setScorekeeperMode] = useState(false);
   const [virtualDiceMode, setVirtualDiceMode] = useState(false);
+  const [dailyMode, setDailyMode] = useState(false);
+  const [dailyDate, setDailyDate] = useState(utcDateKey);
+  const [dailyThrowIndex, setDailyThrowIndex] = useState(0);
+  const [progressRecorded, setProgressRecorded] = useState(false);
+  const [yahtzeeOnFinalRoll, setYahtzeeOnFinalRoll] = useState(false);
+  const [dailyStanding, setDailyStanding] = useState('');
   const [currentPlayer, setCurrentPlayer] = useState<Player>(1);
   const [viewingPlayer, setViewingPlayer] = useState<Player>(1);
   const [dice, setDice] = useState<DieFace[]>(initialDice);
@@ -235,7 +249,7 @@ export function GameScreen() {
       if (!value) return;
       const saved = JSON.parse(value) as PersistedGame;
       if (!Array.isArray(saved.dice) || saved.dice.length !== 5 || !saved.histories) return;
-      setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setScorekeeperMode(Boolean(saved.scorekeeperMode)); setVirtualDiceMode(Boolean(saved.virtualDiceMode)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
+      setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setScorekeeperMode(Boolean(saved.scorekeeperMode)); setVirtualDiceMode(Boolean(saved.virtualDiceMode)); setDailyMode(Boolean(saved.dailyMode)); setDailyDate(saved.dailyDate || utcDateKey()); setDailyThrowIndex(saved.dailyThrowIndex ?? 0); setProgressRecorded(Boolean(saved.progressRecorded)); setYahtzeeOnFinalRoll(Boolean(saved.yahtzeeOnFinalRoll)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
       setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories(saved.histories); setSubmitted(Boolean(saved.submitted)); setQueued(Boolean(saved.queued));
       if (saved.gameId) setGameId(saved.gameId);
     }).catch(() => undefined).finally(() => setHydrated(true));
@@ -243,9 +257,9 @@ export function GameScreen() {
 
   useEffect(() => {
     if (!hydrated) return;
-    const state: PersistedGame = { twoPlayer, computerOpponent, scorekeeperMode, virtualDiceMode, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, queued, gameId };
+    const state: PersistedGame = { twoPlayer, computerOpponent, scorekeeperMode, virtualDiceMode, dailyMode, dailyDate, dailyThrowIndex, progressRecorded, yahtzeeOnFinalRoll, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, queued, gameId };
     void AsyncStorage.setItem(storageKey, JSON.stringify(state));
-  }, [computerOpponent, currentPlayer, dice, gameId, hasRolled, held, histories, hydrated, queued, rollsLeft, scorekeeperMode, submitted, twoPlayer, virtualDiceMode]);
+  }, [computerOpponent, currentPlayer, dailyDate, dailyMode, dailyThrowIndex, dice, gameId, hasRolled, held, histories, hydrated, progressRecorded, queued, rollsLeft, scorekeeperMode, submitted, twoPlayer, virtualDiceMode, yahtzeeOnFinalRoll]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -259,6 +273,34 @@ export function GameScreen() {
     void syncQueueState();
     return subscribeToPendingScores(() => void syncQueueState());
   }, [gameId, hydrated, queued]);
+
+  useEffect(() => {
+    if (!hydrated || !complete || progressRecorded || twoPlayer || !user) return;
+    const metrics = resultMetrics(histories[1]);
+    const mode = dailyMode ? 'DAILY' : 'SOLO';
+    const completedAt = new Date().toISOString();
+    void createGameResult({
+      id: dailyMode ? `daily:${dailyDate}:${user.userId}` : gameId,
+      mode,
+      modeDate: dailyMode ? `DAILY#${dailyDate}` : 'SOLO#ALL',
+      challengeDate: dailyMode ? dailyDate : undefined,
+      completedAt,
+      ...metrics,
+      yahtzeeOnFinalRoll,
+    }).then(async (savedResult) => {
+      setProgressRecorded(true);
+      showToast(dailyMode ? 'Daily result saved' : 'Achievement progress saved');
+      if (dailyMode) {
+        const board = await fetchDailyResults(dailyDate);
+        const rank = board.findIndex((result) => result.userId === savedResult.userId) + 1;
+        if (rank > 0) setDailyStanding(`#${rank} today · Top ${Math.max(1, Math.ceil((rank / board.length) * 100))}%`);
+      }
+    }).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Progress could not be saved.';
+      if (dailyMode && /ConditionalCheckFailed|conditional request|already exists/i.test(message)) setProgressRecorded(true);
+      else console.error('[gameResults.create]', error);
+    });
+  }, [complete, dailyDate, dailyMode, gameId, histories, hydrated, progressRecorded, twoPlayer, user, yahtzeeOnFinalRoll]);
 
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -370,7 +412,10 @@ export function GameScreen() {
   const roll = () => {
     if (rollsLeft === 0 || complete) return;
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setSelectedCategory(null); setRollToken((token) => token + 1);
-    setDice((current) => current.map((die, index) => held.has(index) ? die : rollDie())); setRollsLeft((count) => count - 1); setHasRolled(true);
+    const dailyRoll = dailyMode ? dailyDiceForThrow(dailyDate, dailyThrowIndex) : null;
+    setDice((current) => current.map((die, index) => held.has(index) ? die : dailyRoll?.[index] ?? rollDie()));
+    if (dailyMode) setDailyThrowIndex((index) => index + 1);
+    setRollsLeft((count) => count - 1); setHasRolled(true);
   };
 
   const toggleHeld = (index: number) => {
@@ -383,13 +428,14 @@ export function GameScreen() {
     if (!selectedCategory || !hasRolled || used.has(selectedCategory)) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const entry = { category: selectedCategory, score: scoreCategory(selectedCategory, dice), dice: [...dice] };
+    if (selectedCategory === 'Yahtzee' && entry.score === 50 && rollsLeft === 0) setYahtzeeOnFinalRoll(true);
     showToast(`${selectedCategory} locked in for ${entry.score} ${entry.score === 1 ? 'point' : 'points'}`);
     setHistories((current) => ({ ...current, [currentPlayer]: [...current[currentPlayer], entry] })); nextRound();
   };
 
   const clearGame = () => {
     setHistories({ 1: [], 2: [] }); setCurrentPlayer(1); setViewingPlayer(1); setDice(initialDice); setHeld(new Set());
-    setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setSubmitted(false); setQueued(false); setShowScorecard(false);
+    setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setSubmitted(false); setQueued(false); setShowScorecard(false); setDailyThrowIndex(0); setDailyDate(utcDateKey()); setProgressRecorded(false); setYahtzeeOnFinalRoll(false); setDailyStanding('');
     setGameId(`mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   };
 
@@ -397,9 +443,9 @@ export function GameScreen() {
     { text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: clearGame },
   ]);
 
-  const applyMode = (mode: GameMode) => { setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); setVirtualDiceMode(mode === 'virtual'); clearGame(); };
+  const applyMode = (mode: GameMode) => { setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); setVirtualDiceMode(mode === 'virtual'); setDailyMode(mode === 'daily'); clearGame(); };
   const changeMode = (mode: GameMode) => {
-    const activeMode = scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
+    const activeMode = scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : dailyMode ? 'daily' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
     if (mode === activeMode) return;
     if (histories[1].length || histories[2].length) Alert.alert('Start a new game?', 'Changing mode resets the current scorecard.', [
       { text: 'Cancel', style: 'cancel' }, { text: 'Change Mode', style: 'destructive', onPress: () => applyMode(mode) },
@@ -427,10 +473,10 @@ export function GameScreen() {
       ].join('\n');
     };
     const players = ([1, ...(twoPlayer ? [2] : [])] as Player[]).map(resultFor).join('\n\n════════════════════\n\n');
-    const headline = twoPlayer ? winner.toUpperCase() : 'GAME COMPLETE';
+    const headline = dailyMode ? `DAILY CHALLENGE · ${dailyDate}` : twoPlayer ? winner.toUpperCase() : 'GAME COMPLETE';
     await Share.share({
       title: 'Yahtzee result',
-      message: `YAHTZEE!\n${headline}\n════════════════════\n\n${players}\n\n════════════════════\nCan you beat this score?`,
+      message: `YAHTZEE HUB!\n${headline}\n════════════════════\n\n${players}${dailyStanding ? `\n\n${dailyStanding}` : ''}\n\n════════════════════\nCan you beat this score?`,
     });
   };
 
@@ -481,7 +527,7 @@ export function GameScreen() {
   </>;
   };
 
-  const activeMode: GameMode = scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
+  const activeMode: GameMode = scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : dailyMode ? 'daily' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
   if (scorekeeperMode) return <View style={styles.gameContainer}><View style={styles.scorekeeperModeBar}><GameModePicker active={activeMode} onChange={changeMode} /></View><RealDiceScreen /></View>;
   if (virtualDiceMode) return <View style={styles.gameContainer}><View style={styles.scorekeeperModeBar}><GameModePicker active={activeMode} onChange={changeMode} /></View><VirtualDiceScreen /></View>;
 
@@ -490,7 +536,7 @@ export function GameScreen() {
 
     <View style={styles.turnControls}>
       <GameModePicker active={activeMode} onChange={changeMode} />
-      <View style={styles.turnHeadingRow}><View><Text style={[styles.title, { color: currentProfile.score }]}>{isComputerTurn ? "Computer's turn" : computerOpponent ? 'Your turn' : twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={[styles.computerBadge, { backgroundColor: computerProfile.soft }]}><Ionicons name="hardware-chip-outline" size={13} color={computerProfile.accent} /><Text style={[styles.computerBadgeText, { color: computerProfile.accent }]}>Thinking</Text></View>}</View>
+      <View style={styles.turnHeadingRow}><View><Text style={[styles.title, { color: currentProfile.score }]}>{isComputerTurn ? "Computer's turn" : dailyMode ? 'Daily Challenge' : computerOpponent ? 'Your turn' : twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>{dailyMode ? `${dailyDate} · ` : ''}Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={[styles.computerBadge, { backgroundColor: computerProfile.soft }]}><Ionicons name="hardware-chip-outline" size={13} color={computerProfile.accent} /><Text style={[styles.computerBadgeText, { color: computerProfile.accent }]}>Thinking</Text></View>}</View>
       <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} accentColor={currentProfile.accent} heldColor={colors.yellow} softColor={colors.background} onPress={() => toggleHeld(index)} />)}</View>
       <View style={styles.rollMeta}><Text style={[styles.help, { color: currentProfile.accent }]}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && { backgroundColor: currentProfile.accent, borderColor: currentProfile.accent }]} />)}</View></View>
       <Pressable accessibilityRole="button" accessibilityLabel={`Roll dice, ${rollsLeft} rolls remaining`} disabled={rollsLeft === 0 || complete || isComputerTurn} onPress={roll} style={({ pressed }) => [styles.primaryButton, { backgroundColor: currentProfile.accent, shadowColor: currentProfile.accent }, (rollsLeft === 0 || complete || isComputerTurn) && styles.disabled, pressed && styles.pressed]}><View style={styles.buttonContent}><Ionicons name={isComputerTurn ? 'hardware-chip-outline' : 'dice'} size={22} color={colors.background} /><Text style={styles.primaryText}>{isComputerTurn ? 'Computer Playing' : hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></View></Pressable>
@@ -501,7 +547,7 @@ export function GameScreen() {
       {complete ? <View style={styles.completeCard}>
         <View style={styles.completeIcon}><Ionicons name="trophy-outline" size={34} color={colors.yellow} /></View><Text style={styles.completeTitle}>{winner}</Text>
         {twoPlayer ? <View style={styles.finalTotals}><Text style={[styles.playerOneText, { color: playerProfiles[0].accent }]}>{computerOpponent ? 'You' : 'Player 1'} · {totals[1]}</Text><Text style={[styles.playerTwoText, { color: secondPlayerProfile.accent }]}>{computerOpponent ? 'Computer' : 'Player 2'} · {totals[2]}</Text></View> : <Text style={styles.finalScore}>{totals[1]}</Text>}
-        <Text style={styles.completeCopy}>{bonuses[1] ? `Includes the ${upperBonusPoints}-point upper-section bonus.` : 'Final scorecard complete.'}</Text>
+        <Text style={styles.completeCopy}>{dailyStanding || (bonuses[1] ? `Includes the ${upperBonusPoints}-point upper-section bonus.` : 'Final scorecard complete.')}</Text>
         {(!twoPlayer || computerOpponent) && <Pressable disabled={submitting || submitted || queued} onPress={() => void sendScore()} style={[styles.primaryButton, (submitted || queued) && styles.disabled]}><Text style={styles.primaryText}>{submitted ? 'Submitted' : queued ? 'Queued for Upload' : submitting ? 'Submitting…' : 'Submit Your Score'}</Text></Pressable>}
         {queued && <Text style={styles.queueHint}>Safe on this device. It will submit when this account is online.</Text>}
         <View style={styles.completeActions}><Pressable onPress={() => void shareScorecard()} style={styles.secondaryButton}><Ionicons name="share-outline" size={19} color={colors.cyan} /><Text style={styles.secondaryText}>Share</Text></Pressable><Pressable onPress={clearGame} style={styles.newGameButton}><Ionicons name="refresh" size={19} color={colors.background} /><Text style={styles.newGameText}>New Game</Text></Pressable></View>

@@ -8,15 +8,17 @@ import { AccountScreen } from './src/screens/AccountScreen';
 import { AboutScreen } from './src/screens/AboutScreen';
 import { GameScreen } from './src/screens/GameScreen';
 import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
+import { ProgressScreen } from './src/screens/ProgressScreen';
 import { AuthProvider, useAuth } from './src/state/AuthContext';
 import { flushPendingScores } from './src/services/pendingScores';
 import { colors } from './src/theme';
 
-type Tab = 'game' | 'leaderboard' | 'account' | 'about';
+type Tab = 'game' | 'leaderboard' | 'progress' | 'account' | 'about';
 
 const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'game', label: 'Play', icon: 'dice-outline', activeIcon: 'dice' },
   { key: 'leaderboard', label: 'Scores', icon: 'trophy-outline', activeIcon: 'trophy' },
+  { key: 'progress', label: 'Progress', icon: 'ribbon-outline', activeIcon: 'ribbon' },
   { key: 'account', label: 'Account', icon: 'person-outline', activeIcon: 'person' },
   { key: 'about', label: 'About', icon: 'information-circle-outline', activeIcon: 'information-circle' },
 ];
@@ -49,6 +51,7 @@ export default function App() {
         <View style={styles.screen}>
           {tab === 'game' && <GameScreen />}
           {tab === 'leaderboard' && <LeaderboardScreen />}
+          {tab === 'progress' && <ProgressScreen />}
           {tab === 'account' && <AccountScreen />}
           {tab === 'about' && <AboutScreen />}
         </View>
