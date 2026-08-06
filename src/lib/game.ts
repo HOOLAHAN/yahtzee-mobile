@@ -81,7 +81,10 @@ export const categoryRecommendationValue = (category: Category, dice: DieFace[])
 
   // Completed fixed combinations are excellent locks. Number categories are
   // measured by how many matching dice were secured, not just raw points.
-  if (category === 'Full House' || category === 'Small Straight' || category === 'Large Straight' || category === 'Yahtzee') return 1;
+  if (category === 'Yahtzee') return 4;
+  if (category === 'Large Straight') return 3;
+  if (category === 'Full House') return 2.25;
+  if (category === 'Small Straight') return 2;
   if (upperCategories.includes(category)) return score / categoryMaximums[category];
 
   // Preserve flexible lower-section categories unless the roll fills them well.

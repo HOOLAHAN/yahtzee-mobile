@@ -13,8 +13,10 @@ import { ProgressScreen } from './src/screens/ProgressScreen';
 import { AuthProvider, useAuth } from './src/state/AuthContext';
 import { flushPendingScores } from './src/services/pendingScores';
 import { colors } from './src/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type Tab = 'game' | 'leaderboard' | 'progress' | 'account' | 'about';
+const scoreSuggestionsKey = 'yahtzee.score-suggestions.v1';
 
 const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'game', label: 'Play', icon: 'dice-outline', activeIcon: 'dice' },
@@ -44,12 +46,16 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('game');
   const [gameChooserRequest, setGameChooserRequest] = useState(0);
   const [gameHeaderTitle, setGameHeaderTitle] = useState('Yahtzee!');
+  const [scoreSuggestionsEnabled, setScoreSuggestionsEnabled] = useState(true);
   const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'leaderboard' ? 'High Scores' : tab === 'progress' ? 'Progress' : tab === 'account' ? 'Account' : 'About';
 
   const selectTab = (nextTab: Tab) => {
     if (nextTab === 'game') setGameChooserRequest((request) => request + 1);
     setTab(nextTab);
   };
+
+  useEffect(() => { void AsyncStorage.getItem(scoreSuggestionsKey).then((value) => { if (value !== null) setScoreSuggestionsEnabled(value !== 'false'); }); }, []);
+  const changeScoreSuggestions = (enabled: boolean) => { setScoreSuggestionsEnabled(enabled); void AsyncStorage.setItem(scoreSuggestionsKey, String(enabled)); };
 
   return (
     <SafeAreaProvider>
@@ -59,10 +65,10 @@ export default function App() {
         <StatusBar style="light" />
         <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text numberOfLines={1} style={styles.logo}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
         <View style={styles.screen}>
-          {tab === 'game' && <GameScreen chooserRequest={gameChooserRequest} onHeaderTitleChange={setGameHeaderTitle} />}
+          {tab === 'game' && <GameScreen chooserRequest={gameChooserRequest} onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} />}
           {tab === 'leaderboard' && <LeaderboardScreen />}
           {tab === 'progress' && <ProgressScreen />}
-          {tab === 'account' && <AccountScreen />}
+          {tab === 'account' && <AccountScreen scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} />}
           {tab === 'about' && <AboutScreen />}
         </View>
         <View style={styles.tabBar}>

@@ -199,7 +199,7 @@ function computerCategory(dice: DieFace[], used: Set<Category>, entries: ScoreEn
   return available.reduce((best, category) => computerCategoryValue(category, dice, entries) > computerCategoryValue(best, dice, entries) ? category : best);
 }
 
-export function GameScreen({ chooserRequest = 0, onHeaderTitleChange }: { chooserRequest?: number; onHeaderTitleChange?: (title: string) => void }) {
+export function GameScreen({ chooserRequest = 0, onHeaderTitleChange, scoreSuggestionsEnabled = true }: { chooserRequest?: number; onHeaderTitleChange?: (title: string) => void; scoreSuggestionsEnabled?: boolean }) {
   const { user } = useAuth();
   const [twoPlayer, setTwoPlayer] = useState(false);
   const [computerOpponent, setComputerOpponent] = useState(false);
@@ -253,11 +253,11 @@ export function GameScreen({ chooserRequest = 0, onHeaderTitleChange }: { choose
   const secondPlayerProfile = computerOpponent ? computerProfile : playerProfiles[1];
   const currentProfile = currentPlayer === 1 ? playerProfiles[0] : secondPlayerProfile;
   const recommendedCategory = useMemo(() => {
-    if (!hasRolled) return null;
+    if (!hasRolled || !scoreSuggestionsEnabled) return null;
     return categories
       .filter((category) => !used.has(category))
       .reduce<Category | null>((best, category) => !best || categoryRecommendationValue(category, dice) > categoryRecommendationValue(best, dice) ? category : best, null);
-  }, [dice, hasRolled, used]);
+  }, [dice, hasRolled, scoreSuggestionsEnabled, used]);
 
   useEffect(() => {
     void AsyncStorage.getItem(storageKey).then((value) => {
@@ -554,7 +554,7 @@ export function GameScreen({ chooserRequest = 0, onHeaderTitleChange }: { choose
       <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} accentColor={currentProfile.accent} heldColor={colors.yellow} softColor={colors.background} onPress={() => toggleHeld(index)} />)}</View>
       <View style={styles.rollMeta}><Text style={[styles.help, { color: currentProfile.accent }]}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && { backgroundColor: currentProfile.accent, borderColor: currentProfile.accent }]} />)}</View></View>
       <Pressable accessibilityRole="button" accessibilityLabel={`Roll dice, ${rollsLeft} rolls remaining`} disabled={rollsLeft === 0 || complete || isComputerTurn} onPress={roll} style={({ pressed }) => [styles.primaryButton, { backgroundColor: currentProfile.accent, shadowColor: currentProfile.accent }, (rollsLeft === 0 || complete || isComputerTurn) && styles.disabled, pressed && styles.pressed]}><View style={styles.buttonContent}><Ionicons name={isComputerTurn ? 'hardware-chip-outline' : 'dice'} size={22} color={colors.background} /><Text style={styles.primaryText}>{isComputerTurn ? 'Computer Playing' : hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></View></Pressable>
-      <View style={styles.compactSummary}><Text style={styles.compactLabel}>Best now <Text style={[styles.compactValue, { color: currentProfile.score }]}>{currentScore}</Text></Text><Text style={styles.compactLabel}>{isComputerTurn ? 'Computer' : 'Total'} <Text style={[styles.compactValue, { color: currentProfile.score }]}>{totals[currentPlayer]}</Text></Text>{twoPlayer && <Text style={styles.compactLabel}>{computerOpponent ? 'You' : `P${currentPlayer === 1 ? 2 : 1}`} <Text style={[styles.compactValue, { color: currentPlayer === 1 ? secondPlayerProfile.score : playerProfiles[0].score }]}>{totals[currentPlayer === 1 ? 2 : 1]}</Text></Text>}</View>
+      <View style={styles.compactSummary}>{scoreSuggestionsEnabled && <Text style={styles.compactLabel}>Best now <Text style={[styles.compactValue, { color: currentProfile.score }]}>{currentScore}</Text></Text>}<Text style={styles.compactLabel}>{isComputerTurn ? 'Computer' : 'Total'} <Text style={[styles.compactValue, { color: currentProfile.score }]}>{totals[currentPlayer]}</Text></Text>{twoPlayer && <Text style={styles.compactLabel}>{computerOpponent ? 'You' : `P${currentPlayer === 1 ? 2 : 1}`} <Text style={[styles.compactValue, { color: currentPlayer === 1 ? secondPlayerProfile.score : playerProfiles[0].score }]}>{totals[currentPlayer === 1 ? 2 : 1]}</Text></Text>}</View>
     </View>
 
     <ScrollView contentContainerStyle={[styles.content, selectedCategory && styles.contentWithLock]}>
