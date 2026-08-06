@@ -211,6 +211,8 @@ export function GameScreen({ chooserRequest = 0, onHeaderTitleChange, scoreSugge
   const [progressRecorded, setProgressRecorded] = useState(false);
   const [yahtzeeOnFinalRoll, setYahtzeeOnFinalRoll] = useState(false);
   const [dailyStanding, setDailyStanding] = useState('');
+  const [dailyAlreadyCompleted, setDailyAlreadyCompleted] = useState(false);
+  const [checkingDailyCompletion, setCheckingDailyCompletion] = useState(false);
   const [showModeChooser, setShowModeChooser] = useState(true);
   const [currentPlayer, setCurrentPlayer] = useState<Player>(1);
   const [viewingPlayer, setViewingPlayer] = useState<Player>(1);
@@ -258,6 +260,33 @@ export function GameScreen({ chooserRequest = 0, onHeaderTitleChange, scoreSugge
       .filter((category) => !used.has(category))
       .reduce<Category | null>((best, category) => !best || categoryRecommendationValue(category, dice) > categoryRecommendationValue(best, dice) ? category : best, null);
   }, [dice, hasRolled, scoreSuggestionsEnabled, used]);
+
+  useEffect(() => {
+    if (!dailyMode) { setDailyAlreadyCompleted(false); return; }
+    let cancelled = false;
+    const completionKey = `yahtzee.daily.completed.${dailyDate}.${user?.userId ?? 'guest'}`;
+    const checkCompletion = async () => {
+      const completedOnDevice = await AsyncStorage.getItem(completionKey);
+      if (!cancelled && completedOnDevice === 'true') setDailyAlreadyCompleted(true);
+      if (!user) return;
+      setCheckingDailyCompletion(true);
+      try {
+        const results = await fetchDailyResults(dailyDate);
+        if (!cancelled && results.some((result) => result.userId === user.userId)) {
+          await AsyncStorage.setItem(completionKey, 'true');
+          setDailyAlreadyCompleted(true);
+        }
+      } catch (error) { console.error('[dailyChallenge.check]', error); }
+      finally { if (!cancelled) setCheckingDailyCompletion(false); }
+    };
+    void checkCompletion();
+    return () => { cancelled = true; };
+  }, [dailyDate, dailyMode, user]);
+
+  useEffect(() => {
+    if (!dailyMode || !complete) return;
+    void AsyncStorage.setItem(`yahtzee.daily.completed.${dailyDate}.${user?.userId ?? 'guest'}`, 'true');
+  }, [complete, dailyDate, dailyMode, user?.userId]);
 
   useEffect(() => {
     void AsyncStorage.getItem(storageKey).then((value) => {
@@ -523,6 +552,8 @@ export function GameScreen({ chooserRequest = 0, onHeaderTitleChange, scoreSugge
 
   const winner = twoPlayer && complete ? totals[1] === totals[2] ? 'Draw game' : totals[1] > totals[2] ? 'Player 1 wins' : computerOpponent ? 'Computer wins' : 'Player 2 wins' : 'Game complete';
 
+  if (!showModeChooser && dailyMode && (checkingDailyCompletion || dailyAlreadyCompleted) && !complete) return <View style={styles.gameContainer}><View style={styles.dailyCompleteCard}><View style={styles.dailyCompleteIcon}><Ionicons name={checkingDailyCompletion ? 'sync-outline' : 'lock-closed'} size={28} color={colors.yellow} /></View><Text style={styles.dailyCompleteEyebrow}>DAILY CHALLENGE · {dailyDate}</Text><Text style={styles.dailyCompleteTitle}>{checkingDailyCompletion ? 'Checking today’s result…' : 'Challenge completed'}</Text><Text style={styles.dailyCompleteCopy}>{checkingDailyCompletion ? 'Making sure this account has not already played today.' : 'You have already completed today’s fixed-roll challenge. Come back tomorrow for a new sequence.'}</Text>{!checkingDailyCompletion && <Pressable onPress={() => setShowModeChooser(true)} style={styles.dailyCompleteButton}><Ionicons name="settings-outline" size={18} color={colors.cyan} /><Text style={styles.dailyCompleteButtonText}>Choose another game</Text></Pressable>}</View></View>;
+
   const scorecardContent = (player: Player) => {
     const profile = player === 1 ? playerProfiles[0] : secondPlayerProfile;
     return <>
@@ -599,6 +630,7 @@ export function GameScreen({ chooserRequest = 0, onHeaderTitleChange, scoreSugge
 
 const styles = StyleSheet.create({
   gameContainer: { flex: 1 }, content: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 20 }, contentWithLock: { paddingBottom: 105 },
+  dailyCompleteCard: { flex: 1, margin: 18, padding: 24, alignItems: 'center', justifyContent: 'center', borderRadius: 20, borderColor: '#315a5e', borderWidth: 1, backgroundColor: colors.surface }, dailyCompleteIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: '#313514' }, dailyCompleteEyebrow: { color: colors.pink, fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginTop: 18 }, dailyCompleteTitle: { color: colors.yellow, fontSize: 24, fontWeight: '900', textAlign: 'center', marginTop: 5 }, dailyCompleteCopy: { maxWidth: 330, color: colors.mint, fontSize: 13, lineHeight: 20, textAlign: 'center', marginTop: 9 }, dailyCompleteButton: { flexDirection: 'row', alignItems: 'center', gap: 7, borderColor: colors.cyan, borderWidth: 1, borderRadius: 11, paddingHorizontal: 15, paddingVertical: 12, marginTop: 20 }, dailyCompleteButtonText: { color: colors.cyan, fontWeight: '900' },
   toast: { position: 'absolute', zIndex: 20, bottom: 10, left: 14, right: 14, minHeight: 72, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.yellow, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: colors.yellow, shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 12 }, toastText: { color: colors.background, fontWeight: '900', textAlign: 'center', flexShrink: 1 },
   turnControls: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, backgroundColor: colors.background, borderBottomColor: '#253438', borderBottomWidth: 1 },
   chooserContent: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 38 }, chooserEyebrow: { color: colors.pink, fontSize: 11, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' }, chooserTitle: { color: colors.yellow, fontSize: 27, fontWeight: '900', marginTop: 4 }, chooserIntro: { color: colors.mint, fontSize: 13, lineHeight: 19, marginTop: 5, maxWidth: 430 }, chooserSection: { color: colors.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.3, textTransform: 'uppercase', marginTop: 22, marginBottom: 8 }, choiceList: { gap: 9 }, gameChoice: { minHeight: 116, flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14, borderRadius: 15, borderColor: '#2d3c40', borderWidth: 1, backgroundColor: colors.surface }, toolChoice: { minHeight: 92, backgroundColor: '#101516' }, choicePressed: { opacity: 0.78, transform: [{ scale: 0.985 }] }, choiceIcon: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#20383b' }, toolIcon: { backgroundColor: '#2a2d14' }, choiceCopy: { flex: 1 }, choiceTitle: { color: colors.white, fontSize: 16, fontWeight: '900' }, choiceDescription: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 4 }, choiceAction: { color: colors.cyan, fontSize: 10, fontWeight: '900', textTransform: 'uppercase', marginTop: 8 }, toolAction: { color: colors.yellow },
