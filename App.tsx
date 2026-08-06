@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Image, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import './src/services/amplify';
@@ -49,6 +50,7 @@ export default function App() {
   };
 
   return (
+    <SafeAreaProvider>
     <AuthProvider>
       <PendingScoreSync />
       <SafeAreaView style={styles.safeArea}>
@@ -71,6 +73,7 @@ export default function App() {
         </View>
       </SafeAreaView>
     </AuthProvider>
+    </SafeAreaProvider>
   );
 }
 
