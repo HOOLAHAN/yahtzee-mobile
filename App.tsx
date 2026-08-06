@@ -19,9 +19,9 @@ type Tab = 'game' | 'leaderboard' | 'progress' | 'account' | 'about';
 const scoreSuggestionsKey = 'yahtzee.score-suggestions.v1';
 
 const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'game', label: 'Play', icon: 'dice-outline', activeIcon: 'dice' },
   { key: 'leaderboard', label: 'Scores', icon: 'trophy-outline', activeIcon: 'trophy' },
   { key: 'progress', label: 'Progress', icon: 'ribbon-outline', activeIcon: 'ribbon' },
+  { key: 'game', label: 'Play', icon: 'dice-outline', activeIcon: 'dice' },
   { key: 'account', label: 'Account', icon: 'person-outline', activeIcon: 'person' },
   { key: 'about', label: 'About', icon: 'information-circle-outline', activeIcon: 'information-circle' },
 ];
@@ -44,15 +44,9 @@ function PendingScoreSync() {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('game');
-  const [gameChooserRequest, setGameChooserRequest] = useState(0);
   const [gameHeaderTitle, setGameHeaderTitle] = useState('Yahtzee!');
   const [scoreSuggestionsEnabled, setScoreSuggestionsEnabled] = useState(true);
   const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'leaderboard' ? 'High Scores' : tab === 'progress' ? 'Progress' : tab === 'account' ? 'Account' : 'About';
-
-  const selectTab = (nextTab: Tab) => {
-    if (nextTab === 'game') setGameChooserRequest((request) => request + 1);
-    setTab(nextTab);
-  };
 
   useEffect(() => { void AsyncStorage.getItem(scoreSuggestionsKey).then((value) => { if (value !== null) setScoreSuggestionsEnabled(value !== 'false'); }); }, []);
   const changeScoreSuggestions = (enabled: boolean) => { setScoreSuggestionsEnabled(enabled); void AsyncStorage.setItem(scoreSuggestionsKey, String(enabled)); };
@@ -65,7 +59,7 @@ export default function App() {
         <StatusBar style="light" />
         <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text numberOfLines={1} style={styles.logo}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
         <View style={styles.screen}>
-          {tab === 'game' && <GameScreen chooserRequest={gameChooserRequest} onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} />}
+          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} /></View>
           {tab === 'leaderboard' && <LeaderboardScreen />}
           {tab === 'progress' && <ProgressScreen />}
           {tab === 'account' && <AccountScreen scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} />}
@@ -73,7 +67,7 @@ export default function App() {
         </View>
         <View style={styles.tabBar}>
           {tabs.map((item) => (
-            <Pressable key={item.key} onPress={() => selectTab(item.key)} style={[styles.tab, tab === item.key && styles.activeTabPill]}>
+            <Pressable key={item.key} onPress={() => setTab(item.key)} style={[styles.tab, tab === item.key && styles.activeTabPill]}>
               <Ionicons name={tab === item.key ? item.activeIcon : item.icon} size={23} color={tab === item.key ? colors.cyan : colors.muted} />
               <Text style={[styles.tabLabel, tab === item.key && styles.activeTab]}>{item.label}</Text>
             </Pressable>
@@ -91,6 +85,7 @@ const styles = StyleSheet.create({
   logoImage: { width: 43, height: 43, resizeMode: 'contain' }, logoSpacer: { width: 43 },
   logo: { flex: 1, color: colors.yellow, fontSize: 24, fontWeight: '900', textAlign: 'center' },
   screen: { flex: 1 },
+  tabScreen: { flex: 1 }, hiddenTab: { display: 'none' },
   tabBar: {
     flexDirection: 'row',
     height: 68,
