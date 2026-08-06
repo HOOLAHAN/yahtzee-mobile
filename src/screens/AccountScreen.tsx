@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ScreenHeader } from '../components/ScreenHeader';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
 import { updateMyProfile, usernameAvailable } from '../services/profiles';
@@ -72,7 +71,6 @@ export function AccountScreen() {
 
   if (auth.loading) return <ActivityIndicator style={styles.loader} color={colors.cyan} size="large" />;
   if (auth.user) return <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" automaticallyAdjustKeyboardInsets contentContainerStyle={styles.content}>
-    <ScreenHeader title="Account" />
     <View style={styles.profileCard}>
       <View style={styles.avatar}><Text style={styles.avatarText}>{auth.user.username.charAt(0).toUpperCase()}</Text></View>
       <View style={styles.profileDetails}>
@@ -163,7 +161,7 @@ export function AccountScreen() {
   };
 
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-    <ScreenHeader title={headings[mode][0]} subtitle={headings[mode][1]} />
+    <View style={styles.formIntro}><Text style={styles.formTitle}>{headings[mode][0]}</Text><Text style={styles.formSubtitle}>{headings[mode][1]}</Text></View>
     {mode === 'register' && <><TextInput value={username} onChangeText={setUsername} placeholder="Unique username" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="none" autoCorrect={false} /><TextInput value={firstName} onChangeText={setFirstName} placeholder="First name (private)" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="words" /><TextInput value={lastName} onChangeText={setLastName} placeholder="Surname (private)" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="words" /></>}
     <TextInput value={email} onChangeText={setEmail} placeholder="Email" placeholderTextColor={colors.muted} style={styles.input} keyboardType="email-address" autoCapitalize="none" autoComplete="email" editable={mode !== 'confirm' && mode !== 'confirmReset'} />
     {(mode === 'confirm' || mode === 'confirmReset') && <TextInput value={code} onChangeText={setCode} placeholder="Verification code" placeholderTextColor={colors.muted} style={styles.input} keyboardType="number-pad" />}
@@ -177,7 +175,7 @@ export function AccountScreen() {
 }
 
 const styles = StyleSheet.create({
-  content: { flexGrow: 1, padding: 20, paddingBottom: 150 }, loader: { flex: 1 },
+  content: { flexGrow: 1, padding: 20, paddingBottom: 150 }, loader: { flex: 1 }, formIntro: { marginBottom: 20 }, formTitle: { color: colors.yellow, fontSize: 24, fontWeight: '900' }, formSubtitle: { color: colors.mint, fontSize: 12, lineHeight: 18, marginTop: 4 },
   input: { backgroundColor: colors.surface, color: colors.white, borderColor: colors.cyan, borderWidth: 1, borderRadius: 12, padding: 15, marginBottom: 12, fontSize: 16 }, button: { backgroundColor: colors.cyan, padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 6 }, buttonText: { color: colors.background, fontWeight: '900', fontSize: 16 }, error: { color: colors.danger, marginBottom: 8 }, link: { color: colors.pink, textAlign: 'center', marginTop: 18, fontWeight: '700' },
   profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 18, padding: 18, marginBottom: 2 },
   avatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#20383b', borderColor: colors.cyan, borderWidth: 1, alignItems: 'center', justifyContent: 'center' }, avatarText: { color: colors.cyan, fontSize: 25, fontWeight: '900' },

@@ -43,6 +43,8 @@ function PendingScoreSync() {
 export default function App() {
   const [tab, setTab] = useState<Tab>('game');
   const [gameChooserRequest, setGameChooserRequest] = useState(0);
+  const [gameHeaderTitle, setGameHeaderTitle] = useState('Yahtzee!');
+  const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'leaderboard' ? 'High Scores' : tab === 'progress' ? 'Progress' : tab === 'account' ? 'Account' : 'About';
 
   const selectTab = (nextTab: Tab) => {
     if (nextTab === 'game') setGameChooserRequest((request) => request + 1);
@@ -55,9 +57,9 @@ export default function App() {
       <PendingScoreSync />
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="light" />
-        <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text style={styles.logo}>Yahtzee!</Text><View style={styles.logoSpacer} /></View>
+        <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text numberOfLines={1} style={styles.logo}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
         <View style={styles.screen}>
-          {tab === 'game' && <GameScreen chooserRequest={gameChooserRequest} />}
+          {tab === 'game' && <GameScreen chooserRequest={gameChooserRequest} onHeaderTitleChange={setGameHeaderTitle} />}
           {tab === 'leaderboard' && <LeaderboardScreen />}
           {tab === 'progress' && <ProgressScreen />}
           {tab === 'account' && <AccountScreen />}
@@ -81,7 +83,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   header: { height: 66, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, borderBottomColor: colors.cyan, borderBottomWidth: 2 },
   logoImage: { width: 43, height: 43, resizeMode: 'contain' }, logoSpacer: { width: 43 },
-  logo: { color: colors.yellow, fontSize: 28, fontWeight: '900' },
+  logo: { flex: 1, color: colors.yellow, fontSize: 24, fontWeight: '900', textAlign: 'center' },
   screen: { flex: 1 },
   tabBar: {
     flexDirection: 'row',

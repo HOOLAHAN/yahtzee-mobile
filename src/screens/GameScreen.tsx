@@ -199,7 +199,7 @@ function computerCategory(dice: DieFace[], used: Set<Category>, entries: ScoreEn
   return available.reduce((best, category) => computerCategoryValue(category, dice, entries) > computerCategoryValue(best, dice, entries) ? category : best);
 }
 
-export function GameScreen({ chooserRequest = 0 }: { chooserRequest?: number }) {
+export function GameScreen({ chooserRequest = 0, onHeaderTitleChange }: { chooserRequest?: number; onHeaderTitleChange?: (title: string) => void }) {
   const { user } = useAuth();
   const [twoPlayer, setTwoPlayer] = useState(false);
   const [computerOpponent, setComputerOpponent] = useState(false);
@@ -234,6 +234,10 @@ export function GameScreen({ chooserRequest = 0 }: { chooserRequest?: number }) 
   const toastY = useRef(new Animated.Value(16)).current;
 
   useEffect(() => { setShowModeChooser(true); }, [chooserRequest]);
+  useEffect(() => {
+    const title = showModeChooser ? 'Yahtzee!' : scorekeeperMode ? 'Scorecard' : virtualDiceMode ? 'Dice Roller' : dailyMode ? 'Daily Challenge' : computerOpponent ? 'Vs Computer' : twoPlayer ? 'Pass & Play' : 'Single Player';
+    onHeaderTitleChange?.(title);
+  }, [computerOpponent, dailyMode, onHeaderTitleChange, scorekeeperMode, showModeChooser, twoPlayer, virtualDiceMode]);
   const toastAnimation = useRef<Animated.CompositeAnimation | null>(null);
   const scorecardY = useRef(new Animated.Value(0)).current;
 
@@ -546,7 +550,7 @@ export function GameScreen({ chooserRequest = 0 }: { chooserRequest?: number }) 
     <Animated.View accessibilityLiveRegion="polite" pointerEvents="none" style={[styles.toast, { opacity: toastOpacity, transform: [{ translateY: toastY }] }]}><Ionicons name="checkmark-circle" size={22} color={colors.background} /><Text style={styles.toastText}>{toastMessage}</Text></Animated.View>
 
     <View style={styles.turnControls}>
-      <View style={styles.turnHeadingRow}><View><Text style={[styles.title, { color: currentProfile.score }]}>{isComputerTurn ? "Computer's turn" : dailyMode ? 'Daily Challenge' : computerOpponent ? 'Your turn' : twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>{dailyMode ? `${dailyDate} · ` : ''}Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={[styles.computerBadge, { backgroundColor: computerProfile.soft }]}><Ionicons name="hardware-chip-outline" size={13} color={computerProfile.accent} /><Text style={[styles.computerBadgeText, { color: computerProfile.accent }]}>Thinking</Text></View>}</View>
+      <View style={styles.turnHeadingRow}><View><Text style={[styles.title, { color: currentProfile.score }]}>{isComputerTurn ? "Computer's turn" : computerOpponent || dailyMode || !twoPlayer ? 'Your turn' : `Player ${currentPlayer}'s turn`}</Text><Text style={styles.progress}>{dailyMode ? `${dailyDate} · ` : ''}Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={[styles.computerBadge, { backgroundColor: computerProfile.soft }]}><Ionicons name="hardware-chip-outline" size={13} color={computerProfile.accent} /><Text style={[styles.computerBadgeText, { color: computerProfile.accent }]}>Thinking</Text></View>}</View>
       <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} accentColor={currentProfile.accent} heldColor={colors.yellow} softColor={colors.background} onPress={() => toggleHeld(index)} />)}</View>
       <View style={styles.rollMeta}><Text style={[styles.help, { color: currentProfile.accent }]}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && { backgroundColor: currentProfile.accent, borderColor: currentProfile.accent }]} />)}</View></View>
       <Pressable accessibilityRole="button" accessibilityLabel={`Roll dice, ${rollsLeft} rolls remaining`} disabled={rollsLeft === 0 || complete || isComputerTurn} onPress={roll} style={({ pressed }) => [styles.primaryButton, { backgroundColor: currentProfile.accent, shadowColor: currentProfile.accent }, (rollsLeft === 0 || complete || isComputerTurn) && styles.disabled, pressed && styles.pressed]}><View style={styles.buttonContent}><Ionicons name={isComputerTurn ? 'hardware-chip-outline' : 'dice'} size={22} color={colors.background} /><Text style={styles.primaryText}>{isComputerTurn ? 'Computer Playing' : hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></View></Pressable>

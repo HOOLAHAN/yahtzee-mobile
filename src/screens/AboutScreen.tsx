@@ -1,7 +1,6 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors, playerProfiles } from '../theme';
-import { ScreenHeader } from '../components/ScreenHeader';
 
 const playModes: { title: string; description: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
   { title: 'Solo', description: 'Play a complete 13-round game, save your score and climb the leaderboard.', icon: 'person-outline', color: playerProfiles[0].accent },
@@ -28,7 +27,6 @@ const scoring = [
 
 export function AboutScreen() {
   return <ScrollView contentContainerStyle={styles.content}>
-    <ScreenHeader title="About Yahtzee" />
     <View style={styles.hero}><View style={styles.heroIcon}><Ionicons name="dice-outline" size={30} color={colors.cyan} /></View><View style={styles.heroCopy}><Text style={styles.heroTitle}>One app, four ways to play</Text><Text style={styles.intro}>Roll digitally, challenge the computer, share the phone, or keep score for a table using real dice.</Text></View></View>
 
     <Text style={styles.heading}>Ways to Play</Text>

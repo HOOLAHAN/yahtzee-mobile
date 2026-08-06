@@ -4,7 +4,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { fetchLeaderboard, fetchUserScores, LeaderboardScore } from '../services/scores';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
-import { ScreenHeader } from '../components/ScreenHeader';
 import { fetchAllDailyResults, fetchDailyResults, fetchSoloResults, fetchWeeklyResults, GameResult } from '../services/gameResults';
 import { utcDateKey } from '../lib/dailyChallenge';
 
@@ -43,7 +42,6 @@ export function LeaderboardScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { setLoading(true); void load(); }} tintColor={colors.cyan} />}>
-      <ScreenHeader title="High Scores" />
       <Text style={styles.intro}>Solo scores and Daily Challenge results are ranked separately.</Text>
       <View style={styles.competitionRow}><Pressable onPress={() => { setLoading(true); setCompetition('solo'); setPeriod('all'); }} style={[styles.competition, competition === 'solo' && styles.competitionActive]}><Ionicons name="person-outline" size={18} color={competition === 'solo' ? colors.background : colors.muted} /><Text style={[styles.competitionText, competition === 'solo' && styles.competitionTextActive]}>Solo</Text></Pressable><Pressable onPress={() => { setLoading(true); setCompetition('daily'); }} style={[styles.competition, competition === 'daily' && styles.competitionActive]}><Ionicons name="sunny-outline" size={18} color={competition === 'daily' ? colors.background : colors.muted} /><Text style={[styles.competitionText, competition === 'daily' && styles.competitionTextActive]}>Daily Challenge</Text></Pressable></View>
       {competition === 'daily' && <View style={styles.periodRow}>{(['today', 'week', 'all'] as Period[]).map((item) => <Pressable key={item} onPress={() => { setLoading(true); setPeriod(item); }} style={[styles.period, period === item && styles.periodActive]}><Text style={[styles.periodText, period === item && styles.periodTextActive]}>{item === 'today' ? 'Today' : item === 'week' ? 'This Week' : 'All Time'}</Text></Pressable>)}</View>}
@@ -69,7 +67,7 @@ export function LeaderboardScreen() {
 
 const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 48 },
-  intro: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: -6, marginBottom: 12 }, competitionRow: { flexDirection: 'row', backgroundColor: colors.surface, padding: 4, borderRadius: 12, marginBottom: 9, gap: 4 }, competition: { flex: 1, minHeight: 44, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', borderRadius: 9 }, competitionActive: { backgroundColor: colors.yellow }, competitionText: { color: colors.muted, fontWeight: '900', fontSize: 12 }, competitionTextActive: { color: colors.background },
+  intro: { color: colors.muted, fontSize: 12, lineHeight: 17, marginBottom: 12 }, competitionRow: { flexDirection: 'row', backgroundColor: colors.surface, padding: 4, borderRadius: 12, marginBottom: 9, gap: 4 }, competition: { flex: 1, minHeight: 44, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', borderRadius: 9 }, competitionActive: { backgroundColor: colors.yellow }, competitionText: { color: colors.muted, fontWeight: '900', fontSize: 12 }, competitionTextActive: { color: colors.background },
   periodRow: { flexDirection: 'row', gap: 7, marginBottom: 9 }, period: { flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderColor: '#315057', borderWidth: 1 }, periodActive: { backgroundColor: '#20383b', borderColor: colors.cyan }, periodText: { color: colors.muted, fontSize: 11, fontWeight: '800' }, periodTextActive: { color: colors.cyan },
   filterRow: { flexDirection: 'row', backgroundColor: colors.surface, padding: 4, borderRadius: 12, marginBottom: 18 },
   filter: { flex: 1, padding: 10, alignItems: 'center', borderRadius: 9 }, filterActive: { backgroundColor: colors.cyan }, filterDisabled: { opacity: 0.4 },

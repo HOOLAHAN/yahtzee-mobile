@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { ScreenHeader } from '../components/ScreenHeader';
 import { currentDailyStreak } from '../lib/engagement';
 import { utcDateKey } from '../lib/dailyChallenge';
 import { fetchMyGameResults, GameResult } from '../services/gameResults';
@@ -47,9 +46,8 @@ export function ProgressScreen() {
   const best = results.reduce((value, result) => Math.max(value, result.score), 0);
   const average = results.length ? Math.round(results.reduce((sum, result) => sum + result.score, 0) / results.length) : 0;
 
-  if (!user) return <ScrollView contentContainerStyle={styles.content}><ScreenHeader title="Progress" /><View style={styles.signInCard}><Ionicons name="ribbon-outline" size={42} color={colors.cyan} /><Text style={styles.signInTitle}>Keep your progress</Text><Text style={styles.copy}>Sign in from Account to sync streaks, statistics and achievements across devices.</Text></View></ScrollView>;
+  if (!user) return <ScrollView contentContainerStyle={styles.content}><View style={styles.signInCard}><Ionicons name="ribbon-outline" size={42} color={colors.cyan} /><Text style={styles.signInTitle}>Keep your progress</Text><Text style={styles.copy}>Sign in from Account to sync streaks, statistics and achievements across devices.</Text></View></ScrollView>;
   return <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => void load()} tintColor={colors.cyan} />}>
-    <ScreenHeader title="Progress" />
     <View style={styles.hero}><View><Text style={styles.eyebrow}>Current Daily streak</Text><Text style={styles.streak}>{streak} <Text style={styles.streakUnit}>{streak === 1 ? 'day' : 'days'}</Text></Text></View><View style={styles.flame}><Ionicons name="flame" size={30} color={colors.yellow} /></View></View>
     <View style={styles.stats}><View style={styles.stat}><Text style={styles.statValue}>{results.length}</Text><Text style={styles.statLabel}>Games</Text></View><View style={styles.stat}><Text style={styles.statValue}>{best}</Text><Text style={styles.statLabel}>Best</Text></View><View style={styles.stat}><Text style={styles.statValue}>{average}</Text><Text style={styles.statLabel}>Average</Text></View></View>
     <View style={styles.heading}><Text style={styles.headingText}>Achievements</Text><Text style={styles.count}>{unlocked}/{achievements.length}</Text></View>
