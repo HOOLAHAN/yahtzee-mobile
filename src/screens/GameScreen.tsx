@@ -69,12 +69,19 @@ function PipFace({ value, small = false }: { value: DieFace; small?: boolean }) 
   return <View style={small ? styles.smallPipGrid : styles.pipGrid}>{Array.from({ length: 9 }, (_, cell) => <View key={cell} style={small ? styles.smallPipCell : styles.pipCell}>{pipCells[value].includes(cell) && <View style={small ? styles.smallPip : styles.pip} />}</View>)}</View>;
 }
 
-function GameModePicker({ active, onChange }: { active: GameMode; onChange: (mode: GameMode) => void }) {
-  const options: { mode: GameMode; label: string }[] = [
-    { mode: 'solo', label: 'Solo' }, { mode: 'daily', label: 'Daily' }, { mode: 'computer', label: 'Computer' },
-    { mode: 'pass', label: 'Pass & Play' }, { mode: 'virtual', label: 'Virtual Dice' }, { mode: 'real', label: 'Real Dice' },
+function GameModeChooser({ onChange }: { onChange: (mode: GameMode) => void }) {
+  const gameOptions: { mode: GameMode; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { mode: 'solo', label: 'Solo', description: 'Play a classic game at your own pace and submit your final score.', icon: 'person-outline' },
+    { mode: 'daily', label: 'Daily Challenge', description: 'Play today’s fixed roll sequence. Everyone gets the same candidate dice each roll; your holds and scoring choices decide the result.', icon: 'sunny-outline' },
+    { mode: 'computer', label: 'Vs Computer', description: 'Test your choices against a strategic computer opponent.', icon: 'hardware-chip-outline' },
+    { mode: 'pass', label: 'Pass & Play', description: 'Share this device and take turns in a two-player game.', icon: 'people-outline' },
   ];
-  return <View style={styles.modePicker}>{options.map((option) => <Pressable key={option.mode} accessibilityRole="button" accessibilityState={{ selected: active === option.mode }} onPress={() => onChange(option.mode)} style={[styles.mode, active === option.mode && styles.modeActive]}><Text style={[styles.modeText, active === option.mode && styles.modeTextActive]}>{option.label}</Text></Pressable>)}</View>;
+  const tools: { mode: GameMode; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { mode: 'virtual', label: 'Dice Roller', description: 'Roll one or two dice for any tabletop game.', icon: 'dice-outline' },
+    { mode: 'real', label: 'Scorecard', description: 'Use physical dice while the app manages every player.', icon: 'calculator-outline' },
+  ];
+  const choice = (option: typeof gameOptions[number], tool = false) => <Pressable key={option.mode} accessibilityRole="button" onPress={() => onChange(option.mode)} style={({ pressed }) => [styles.gameChoice, tool && styles.toolChoice, pressed && styles.choicePressed]}><View style={[styles.choiceIcon, tool && styles.toolIcon]}><Ionicons name={option.icon} size={23} color={tool ? colors.yellow : colors.cyan} /></View><View style={styles.choiceCopy}><Text style={styles.choiceTitle}>{option.label}</Text><Text style={styles.choiceDescription}>{option.description}</Text><Text style={[styles.choiceAction, tool && styles.toolAction]}>Open →</Text></View></Pressable>;
+  return <ScrollView contentContainerStyle={styles.chooserContent} showsVerticalScrollIndicator={false}><Text style={styles.chooserEyebrow}>Game settings</Text><Text style={styles.chooserTitle}>Choose how to play</Text><Text style={styles.chooserIntro}>Start a Yahtzee game or open a tool for your physical dice.</Text><Text style={styles.chooserSection}>Play Yahtzee</Text><View style={styles.choiceList}>{gameOptions.map((option) => choice(option))}</View><Text style={styles.chooserSection}>Dice tools</Text><View style={styles.choiceList}>{tools.map((option) => choice(option, true))}</View></ScrollView>;
 }
 
 function AnimatedDie({ value, index, held, rollToken, canHold, reduceMotion, accentColor, heldColor, softColor, onPress }: {
@@ -191,7 +198,7 @@ function computerCategory(dice: DieFace[], used: Set<Category>, entries: ScoreEn
   return available.reduce((best, category) => computerCategoryValue(category, dice, entries) > computerCategoryValue(best, dice, entries) ? category : best);
 }
 
-export function GameScreen() {
+export function GameScreen({ chooserRequest = 0 }: { chooserRequest?: number }) {
   const { user } = useAuth();
   const [twoPlayer, setTwoPlayer] = useState(false);
   const [computerOpponent, setComputerOpponent] = useState(false);
@@ -203,6 +210,7 @@ export function GameScreen() {
   const [progressRecorded, setProgressRecorded] = useState(false);
   const [yahtzeeOnFinalRoll, setYahtzeeOnFinalRoll] = useState(false);
   const [dailyStanding, setDailyStanding] = useState('');
+  const [showModeChooser, setShowModeChooser] = useState(true);
   const [currentPlayer, setCurrentPlayer] = useState<Player>(1);
   const [viewingPlayer, setViewingPlayer] = useState<Player>(1);
   const [dice, setDice] = useState<DieFace[]>(initialDice);
@@ -223,6 +231,8 @@ export function GameScreen() {
   const computerTurnRunning = useRef(false);
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastY = useRef(new Animated.Value(16)).current;
+
+  useEffect(() => { setShowModeChooser(true); }, [chooserRequest]);
   const toastAnimation = useRef<Animated.CompositeAnimation | null>(null);
   const scorecardY = useRef(new Animated.Value(0)).current;
 
@@ -443,10 +453,10 @@ export function GameScreen() {
     { text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: clearGame },
   ]);
 
-  const applyMode = (mode: GameMode) => { setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); setVirtualDiceMode(mode === 'virtual'); setDailyMode(mode === 'daily'); clearGame(); };
+  const applyMode = (mode: GameMode) => { setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); setVirtualDiceMode(mode === 'virtual'); setDailyMode(mode === 'daily'); setShowModeChooser(false); clearGame(); };
   const changeMode = (mode: GameMode) => {
     const activeMode = scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : dailyMode ? 'daily' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
-    if (mode === activeMode) return;
+    if (mode === activeMode) return setShowModeChooser(false);
     if (histories[1].length || histories[2].length) Alert.alert('Start a new game?', 'Changing mode resets the current scorecard.', [
       { text: 'Cancel', style: 'cancel' }, { text: 'Change Mode', style: 'destructive', onPress: () => applyMode(mode) },
     ]); else applyMode(mode);
@@ -527,15 +537,14 @@ export function GameScreen() {
   </>;
   };
 
-  const activeMode: GameMode = scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : dailyMode ? 'daily' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
-  if (scorekeeperMode) return <View style={styles.gameContainer}><View style={styles.scorekeeperModeBar}><GameModePicker active={activeMode} onChange={changeMode} /></View><RealDiceScreen /></View>;
-  if (virtualDiceMode) return <View style={styles.gameContainer}><View style={styles.scorekeeperModeBar}><GameModePicker active={activeMode} onChange={changeMode} /></View><VirtualDiceScreen /></View>;
+  if (showModeChooser) return <GameModeChooser onChange={changeMode} />;
+  if (scorekeeperMode) return <View style={styles.gameContainer}><RealDiceScreen /></View>;
+  if (virtualDiceMode) return <View style={styles.gameContainer}><VirtualDiceScreen /></View>;
 
   return <View style={styles.gameContainer}>
     <Animated.View accessibilityLiveRegion="polite" pointerEvents="none" style={[styles.toast, { opacity: toastOpacity, transform: [{ translateY: toastY }] }]}><Ionicons name="checkmark-circle" size={22} color={colors.background} /><Text style={styles.toastText}>{toastMessage}</Text></Animated.View>
 
     <View style={styles.turnControls}>
-      <GameModePicker active={activeMode} onChange={changeMode} />
       <View style={styles.turnHeadingRow}><View><Text style={[styles.title, { color: currentProfile.score }]}>{isComputerTurn ? "Computer's turn" : dailyMode ? 'Daily Challenge' : computerOpponent ? 'Your turn' : twoPlayer ? `Player ${currentPlayer}'s turn` : 'Single Player'}</Text><Text style={styles.progress}>{dailyMode ? `${dailyDate} · ` : ''}Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={[styles.computerBadge, { backgroundColor: computerProfile.soft }]}><Ionicons name="hardware-chip-outline" size={13} color={computerProfile.accent} /><Text style={[styles.computerBadgeText, { color: computerProfile.accent }]}>Thinking</Text></View>}</View>
       <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} accentColor={currentProfile.accent} heldColor={colors.yellow} softColor={colors.background} onPress={() => toggleHeld(index)} />)}</View>
       <View style={styles.rollMeta}><Text style={[styles.help, { color: currentProfile.accent }]}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && { backgroundColor: currentProfile.accent, borderColor: currentProfile.accent }]} />)}</View></View>
@@ -583,7 +592,7 @@ const styles = StyleSheet.create({
   gameContainer: { flex: 1 }, content: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 48 }, contentWithLock: { paddingBottom: 105 },
   toast: { position: 'absolute', zIndex: 20, bottom: 10, left: 14, right: 14, minHeight: 72, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.yellow, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: colors.yellow, shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 12 }, toastText: { color: colors.background, fontWeight: '900', textAlign: 'center', flexShrink: 1 },
   turnControls: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, backgroundColor: colors.background, borderBottomColor: '#253438', borderBottomWidth: 1 },
-  scorekeeperModeBar: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 6, borderBottomColor: '#253438', borderBottomWidth: 1 }, modePicker: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 10, padding: 3, gap: 2 }, mode: { flex: 1, minHeight: 31, paddingHorizontal: 2, alignItems: 'center', justifyContent: 'center', borderRadius: 7 }, modeActive: { backgroundColor: colors.cyan }, modeText: { color: colors.muted, fontWeight: '800', fontSize: 9.5, textAlign: 'center' }, modeTextActive: { color: colors.background },
+  chooserContent: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 38 }, chooserEyebrow: { color: colors.pink, fontSize: 11, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' }, chooserTitle: { color: colors.yellow, fontSize: 27, fontWeight: '900', marginTop: 4 }, chooserIntro: { color: colors.mint, fontSize: 13, lineHeight: 19, marginTop: 5, maxWidth: 430 }, chooserSection: { color: colors.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.3, textTransform: 'uppercase', marginTop: 22, marginBottom: 8 }, choiceList: { gap: 9 }, gameChoice: { minHeight: 116, flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 14, borderRadius: 15, borderColor: '#2d3c40', borderWidth: 1, backgroundColor: colors.surface }, toolChoice: { minHeight: 92, backgroundColor: '#101516' }, choicePressed: { opacity: 0.78, transform: [{ scale: 0.985 }] }, choiceIcon: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#20383b' }, toolIcon: { backgroundColor: '#2a2d14' }, choiceCopy: { flex: 1 }, choiceTitle: { color: colors.white, fontSize: 16, fontWeight: '900' }, choiceDescription: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 4 }, choiceAction: { color: colors.cyan, fontSize: 10, fontWeight: '900', textTransform: 'uppercase', marginTop: 8 }, toolAction: { color: colors.yellow },
   turnHeadingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 9 }, title: { color: colors.yellow, fontSize: 21, fontWeight: '900' }, playerTwo: { color: colors.pink }, progress: { color: colors.muted, fontSize: 12, marginTop: 1 }, computerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#34202f', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 5 }, computerBadgeText: { color: colors.pink, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
   diceRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingTop: 10, paddingBottom: 4 }, dieSlot: { width: 50, height: 50 }, heldDieSlot: { transform: [{ translateY: -4 }] }, die: { flex: 1, backgroundColor: colors.cyan, borderRadius: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.35, shadowRadius: 6 }, heldDie: { backgroundColor: colors.yellow, borderColor: colors.pink, shadowColor: colors.yellow, shadowOpacity: 0.85, shadowRadius: 10 }, diePressed: { opacity: 0.78, transform: [{ scale: 0.94 }] },
   pipGrid: { width: 33, height: 33, flexDirection: 'row', flexWrap: 'wrap' }, pipCell: { width: 11, height: 11, alignItems: 'center', justifyContent: 'center' }, pip: { width: 6.5, height: 6.5, borderRadius: 3.25, backgroundColor: colors.background }, smallPipGrid: { width: 18, height: 18, flexDirection: 'row', flexWrap: 'wrap' }, smallPipCell: { width: 6, height: 6, alignItems: 'center', justifyContent: 'center' }, smallPip: { width: 3.5, height: 3.5, borderRadius: 2, backgroundColor: colors.background }, holdBadge: { position: 'absolute', bottom: -6, backgroundColor: colors.pink, borderRadius: 5, paddingHorizontal: 4, paddingVertical: 1 }, holdBadgeText: { color: colors.white, fontSize: 7, fontWeight: '900' },

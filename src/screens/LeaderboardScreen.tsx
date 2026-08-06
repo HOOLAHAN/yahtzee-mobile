@@ -13,7 +13,7 @@ export function LeaderboardScreen() {
   const { user } = useAuth();
   const [scores, setScores] = useState<LeaderboardScore[]>([]);
   const [mine, setMine] = useState(false);
-  const [period, setPeriod] = useState<Period>('today');
+  const [period, setPeriod] = useState<Period>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 

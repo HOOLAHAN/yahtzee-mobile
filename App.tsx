@@ -41,6 +41,12 @@ function PendingScoreSync() {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('game');
+  const [gameChooserRequest, setGameChooserRequest] = useState(0);
+
+  const selectTab = (nextTab: Tab) => {
+    if (nextTab === 'game') setGameChooserRequest((request) => request + 1);
+    setTab(nextTab);
+  };
 
   return (
     <AuthProvider>
@@ -49,7 +55,7 @@ export default function App() {
         <StatusBar style="light" />
         <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text style={styles.logo}>Yahtzee!</Text><View style={styles.logoSpacer} /></View>
         <View style={styles.screen}>
-          {tab === 'game' && <GameScreen />}
+          {tab === 'game' && <GameScreen chooserRequest={gameChooserRequest} />}
           {tab === 'leaderboard' && <LeaderboardScreen />}
           {tab === 'progress' && <ProgressScreen />}
           {tab === 'account' && <AccountScreen />}
@@ -57,7 +63,7 @@ export default function App() {
         </View>
         <View style={styles.tabBar}>
           {tabs.map((item) => (
-            <Pressable key={item.key} onPress={() => setTab(item.key)} style={[styles.tab, tab === item.key && styles.activeTabPill]}>
+            <Pressable key={item.key} onPress={() => selectTab(item.key)} style={[styles.tab, tab === item.key && styles.activeTabPill]}>
               <Ionicons name={tab === item.key ? item.activeIcon : item.icon} size={23} color={tab === item.key ? colors.cyan : colors.muted} />
               <Text style={[styles.tabLabel, tab === item.key && styles.activeTab]}>{item.label}</Text>
             </Pressable>
