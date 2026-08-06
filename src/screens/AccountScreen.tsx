@@ -7,7 +7,18 @@ import { updateMyProfile, usernameAvailable } from '../services/profiles';
 
 type Mode = 'login' | 'register' | 'confirm' | 'requestReset' | 'confirmReset';
 
-export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestionsChange }: { scoreSuggestionsEnabled?: boolean; onScoreSuggestionsChange?: (enabled: boolean) => void }) {
+interface AccountScreenProps {
+  scoreSuggestionsEnabled?: boolean;
+  onScoreSuggestionsChange?: (enabled: boolean) => void;
+  remindersEnabled?: boolean;
+  reminderHour?: number;
+  onRemindersChange?: (enabled: boolean) => void;
+  onReminderHourChange?: (hour: number) => void;
+}
+
+const displayHour = (hour: number) => `${hour % 12 || 12}:00 ${hour < 12 ? 'am' : 'pm'}`;
+
+export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestionsChange, remindersEnabled = false, reminderHour = 19, onRemindersChange, onReminderHourChange }: AccountScreenProps) {
   const auth = useAuth();
   const scrollRef = useRef<ScrollView>(null);
   const [mode, setMode] = useState<Mode>('login');
@@ -94,6 +105,10 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
     <Text style={styles.sectionTitle}>Gameplay</Text>
     <Text style={styles.sectionDescription}>Choose how much guidance appears while you play.</Text>
     <View style={styles.preferenceRow}><View style={styles.actionIcon}><Ionicons name="sparkles-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Score suggestions</Text><Text style={styles.actionDescription}>Highlight the recommended category and show “Best now”</Text></View><Switch accessibilityLabel="Score suggestions" value={scoreSuggestionsEnabled} onValueChange={onScoreSuggestionsChange} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={scoreSuggestionsEnabled ? colors.cyan : colors.muted} /></View>
+
+    <Text style={styles.sectionTitle}>Notifications</Text>
+    <Text style={styles.sectionDescription}>Get one local reminder when the Daily Challenge is waiting. Completed days are skipped.</Text>
+    <View style={styles.notificationCard}><View style={styles.preferenceRowInner}><View style={styles.actionIcon}><Ionicons name="notifications-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Daily Challenge reminder</Text><Text style={styles.actionDescription}>{displayHour(reminderHour)} in your local timezone</Text></View><Switch accessibilityLabel="Daily Challenge reminder" value={remindersEnabled} onValueChange={onRemindersChange} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={remindersEnabled ? colors.cyan : colors.muted} /></View>{remindersEnabled && <View style={styles.timeControl}><Pressable accessibilityLabel="Move reminder one hour earlier" onPress={() => onReminderHourChange?.((reminderHour + 23) % 24)} style={styles.timeButton}><Ionicons name="remove" size={20} color={colors.cyan} /></Pressable><View><Text style={styles.timeValue}>{displayHour(reminderHour)}</Text><Text style={styles.timeLabel}>LOCAL TIME</Text></View><Pressable accessibilityLabel="Move reminder one hour later" onPress={() => onReminderHourChange?.((reminderHour + 1) % 24)} style={styles.timeButton}><Ionicons name="add" size={20} color={colors.cyan} /></Pressable></View>}</View>
 
     <Text style={styles.sectionTitle}>Security & access</Text>
     <Text style={styles.sectionDescription}>This account is shared by the Yahtzee website and mobile app.</Text>
@@ -183,6 +198,7 @@ const styles = StyleSheet.create({
   input: { backgroundColor: colors.surface, color: colors.white, borderColor: colors.cyan, borderWidth: 1, borderRadius: 12, padding: 15, marginBottom: 12, fontSize: 16 }, button: { backgroundColor: colors.cyan, padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 6 }, buttonText: { color: colors.background, fontWeight: '900', fontSize: 16 }, error: { color: colors.danger, marginBottom: 8 }, link: { color: colors.pink, textAlign: 'center', marginTop: 18, fontWeight: '700' },
   profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 18, padding: 18, marginBottom: 2 },
   preferenceRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 13, padding: 12 },
+  notificationCard: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 13, padding: 12 }, preferenceRowInner: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10 }, timeControl: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, paddingHorizontal: 12, borderTopColor: '#2d3c40', borderTopWidth: 1 }, timeButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderColor: '#315a5e', borderWidth: 1, backgroundColor: colors.background }, timeValue: { color: colors.yellow, fontSize: 17, fontWeight: '900', textAlign: 'center' }, timeLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 1, textAlign: 'center', marginTop: 2 },
   avatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#20383b', borderColor: colors.cyan, borderWidth: 1, alignItems: 'center', justifyContent: 'center' }, avatarText: { color: colors.cyan, fontSize: 25, fontWeight: '900' },
   profileDetails: { flex: 1, marginLeft: 15 }, username: { color: colors.yellow, fontSize: 22, fontWeight: '900' }, email: { color: colors.mint, marginTop: 3 }, statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 }, statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.cyan, marginRight: 6 }, statusText: { color: colors.muted, fontSize: 12, fontWeight: '700' },
   sectionTitle: { color: colors.cyan, fontSize: 19, fontWeight: '900', marginTop: 28, marginBottom: 8 }, sectionDescription: { color: colors.mint, lineHeight: 21, marginBottom: 17 },

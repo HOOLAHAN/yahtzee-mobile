@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -14,9 +14,13 @@ import { AuthProvider, useAuth } from './src/state/AuthContext';
 import { flushPendingScores } from './src/services/pendingScores';
 import { colors } from './src/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Notifications from 'expo-notifications';
+import { Onboarding } from './src/components/Onboarding';
+import { dailyChallengeCompleted, disableDailyReminders, enableDailyReminders, refreshDailyReminders, updateReminderHour } from './src/services/dailyReminders';
 
 type Tab = 'game' | 'leaderboard' | 'progress' | 'account' | 'about';
 const scoreSuggestionsKey = 'yahtzee.score-suggestions.v1';
+const onboardingKey = 'yahtzee.onboarding.completed.v1';
 
 const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'leaderboard', label: 'Scores', icon: 'trophy-outline', activeIcon: 'trophy' },
@@ -46,10 +50,36 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('game');
   const [gameHeaderTitle, setGameHeaderTitle] = useState('Yahtzee!');
   const [scoreSuggestionsEnabled, setScoreSuggestionsEnabled] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [dailyLaunchRequest, setDailyLaunchRequest] = useState(0);
+  const [remindersEnabled, setRemindersEnabled] = useState(false);
+  const [reminderHour, setReminderHour] = useState(19);
   const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'leaderboard' ? 'High Scores' : tab === 'progress' ? 'Progress' : tab === 'account' ? 'Account' : 'About';
 
-  useEffect(() => { void AsyncStorage.getItem(scoreSuggestionsKey).then((value) => { if (value !== null) setScoreSuggestionsEnabled(value !== 'false'); }); }, []);
+  useEffect(() => {
+    void Promise.all([AsyncStorage.getItem(scoreSuggestionsKey), AsyncStorage.getItem(onboardingKey), refreshDailyReminders()]).then(([suggestions, onboarding, reminders]) => {
+      if (suggestions !== null) setScoreSuggestionsEnabled(suggestions !== 'false');
+      setShowOnboarding(onboarding !== 'true');
+      setRemindersEnabled(reminders.enabled); setReminderHour(reminders.hour);
+    });
+  }, []);
+  useEffect(() => {
+    const openDaily = () => { setTab('game'); setDailyLaunchRequest((value) => value + 1); };
+    void Notifications.getLastNotificationResponseAsync().then((response) => { if (response?.notification.request.content.data?.destination === 'daily') { openDaily(); void Notifications.clearLastNotificationResponseAsync(); } });
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => { if (response.notification.request.content.data?.destination === 'daily') openDaily(); });
+    return () => subscription.remove();
+  }, []);
   const changeScoreSuggestions = (enabled: boolean) => { setScoreSuggestionsEnabled(enabled); void AsyncStorage.setItem(scoreSuggestionsKey, String(enabled)); };
+  const finishOnboarding = () => { setShowOnboarding(false); void AsyncStorage.setItem(onboardingKey, 'true'); };
+  const startDaily = () => { finishOnboarding(); setTab('game'); setDailyLaunchRequest((value) => value + 1); };
+  const changeReminders = async (enabled: boolean) => {
+    if (!enabled) { await disableDailyReminders(); setRemindersEnabled(false); return; }
+    const granted = await enableDailyReminders(reminderHour);
+    setRemindersEnabled(granted);
+    if (!granted) Alert.alert('Notifications are off', 'Enable notifications for Yahtzee Hub in iPhone Settings to receive Daily Challenge reminders.');
+  };
+  const changeReminderHour = async (hour: number) => { setReminderHour(hour); await updateReminderHour(hour); };
+  const handleDailyCompleted = useCallback(() => { void dailyChallengeCompleted(); }, []);
 
   return (
     <SafeAreaProvider>
@@ -59,10 +89,10 @@ export default function App() {
         <StatusBar style="light" />
         <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text numberOfLines={1} style={styles.logo}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
         <View style={styles.screen}>
-          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} /></View>
+          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenAccount={() => setTab('account')} /></View>
           {tab === 'leaderboard' && <LeaderboardScreen />}
           {tab === 'progress' && <ProgressScreen />}
-          {tab === 'account' && <AccountScreen scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} />}
+          {tab === 'account' && <AccountScreen scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} remindersEnabled={remindersEnabled} reminderHour={reminderHour} onRemindersChange={(enabled) => void changeReminders(enabled)} onReminderHourChange={(hour) => void changeReminderHour(hour)} />}
           {tab === 'about' && <AboutScreen />}
         </View>
         <View style={styles.tabBar}>
@@ -73,6 +103,7 @@ export default function App() {
             </Pressable>
           ))}
         </View>
+        <Onboarding visible={showOnboarding} onFinish={finishOnboarding} onStartDaily={startDaily} />
       </SafeAreaView>
     </AuthProvider>
     </SafeAreaProvider>
