@@ -574,8 +574,8 @@ export function GameScreen({ chooserRequest = 0, onHeaderTitleChange, scoreSugge
   };
 
   if (showModeChooser) return <GameModeChooser onChange={changeMode} />;
-  if (scorekeeperMode) return <View style={styles.gameContainer}><RealDiceScreen /></View>;
-  if (virtualDiceMode) return <View style={styles.gameContainer}><VirtualDiceScreen /></View>;
+  if (scorekeeperMode) return <View style={styles.gameContainer}><RealDiceScreen onOpenSettings={() => setShowModeChooser(true)} /></View>;
+  if (virtualDiceMode) return <View style={styles.gameContainer}><VirtualDiceScreen onOpenSettings={() => setShowModeChooser(true)} /></View>;
 
   return <View style={styles.gameContainer}>
     <Animated.View accessibilityLiveRegion="polite" pointerEvents="none" style={[styles.toast, { opacity: toastOpacity, transform: [{ translateY: toastY }] }]}><Ionicons name="checkmark-circle" size={22} color={colors.background} /><Text style={styles.toastText}>{toastMessage}</Text></Animated.View>
