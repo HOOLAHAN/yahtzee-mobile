@@ -47,6 +47,24 @@ export async function fetchDailyResults(dateKey: string, limit = 100) {
   return result.data.gameResultsByModeDate.items.filter(Boolean) as GameResult[];
 }
 
+export async function fetchSoloResults(limit = 500) {
+  const result = await client.graphql({
+    query: `query SoloResults($modeDate:String!,$limit:Int){gameResultsByModeDate(modeDate:$modeDate,sortDirection:DESC,limit:$limit){items{${fields}}}}`,
+    authMode: 'apiKey', variables: { modeDate: 'SOLO#ALL', limit },
+  });
+  if (!('data' in result)) throw new Error('Unable to load Solo game details.');
+  return result.data.gameResultsByModeDate.items.filter(Boolean) as GameResult[];
+}
+
+export async function fetchAllDailyResults(limit = 500) {
+  const result = await client.graphql({
+    query: `query AllDailyResults($limit:Int){listGameResults(filter:{mode:{eq:DAILY}},limit:$limit){items{${fields}}}}`,
+    authMode: 'apiKey', variables: { limit },
+  });
+  if (!('data' in result)) throw new Error('Unable to load Daily Challenge results.');
+  return (result.data.listGameResults.items.filter(Boolean) as GameResult[]).sort((a, b) => b.score - a.score);
+}
+
 export interface PeriodLeaderboardEntry {
   id: string; userId: string; username: string; score: number; timestamp: string;
 }
