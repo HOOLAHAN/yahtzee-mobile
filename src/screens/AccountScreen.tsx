@@ -17,15 +17,32 @@ interface AccountScreenProps {
 }
 
 const displayHour = (hour: number) => `${hour % 12 || 12}:00 ${hour < 12 ? 'am' : 'pm'}`;
+const validEmail = (value: string) => /^\S+@\S+\.\S+$/.test(value.trim());
+const validPassword = (value: string) => value.length >= 8;
+const cleanCode = (value: string) => value.replace(/\D/g, '').slice(0, 6);
+const maskedEmail = (value: string) => { const [name, domain] = value.trim().split('@'); return name && domain ? `${name[0]}${'•'.repeat(Math.min(4, Math.max(1, name.length - 1)))}@${domain}` : value; };
+const friendlyAuthError = (caught: unknown) => {
+  if (!(caught instanceof Error)) return 'Something went wrong. Please try again.';
+  if (caught.name === 'UsernameExistsException') return 'An account with this email already exists. Try signing in or resetting your password.';
+  if (caught.name === 'CodeMismatchException') return 'That code is incorrect. Check the email and try again.';
+  if (caught.name === 'ExpiredCodeException') return 'That code has expired. Request a new one below.';
+  if (caught.name === 'LimitExceededException') return 'Too many attempts. Please wait a little while and try again.';
+  if (caught.name === 'NotAuthorizedException') return 'The email or password is incorrect.';
+  if (caught.name === 'UserNotFoundException') return 'No account was found for that email.';
+  if (caught.name === 'InvalidPasswordException') return 'Use a password with at least 8 characters.';
+  return caught.message || 'Something went wrong. Please try again.';
+};
 
 export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestionsChange, remindersEnabled = false, reminderHour = 19, onRemindersChange, onReminderHourChange }: AccountScreenProps) {
   const auth = useAuth();
   const scrollRef = useRef<ScrollView>(null);
   const [mode, setMode] = useState<Mode>('login');
   const [email, setEmail] = useState(''); const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState(''); const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState(''); const [code, setCode] = useState('');
   const [firstName, setFirstName] = useState(''); const [lastName, setLastName] = useState('');
   const [busy, setBusy] = useState(false); const [error, setError] = useState('');
+  const [resendSeconds, setResendSeconds] = useState(0);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [oldPassword, setOldPassword] = useState(''); const [newPassword, setNewPassword] = useState('');
   const [managementError, setManagementError] = useState(''); const [managementBusy, setManagementBusy] = useState(false);
@@ -35,6 +52,7 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
   const [profileError, setProfileError] = useState('');
 
   useEffect(() => { if (auth.user) { setUsername(auth.user.username); setFirstName(auth.user.firstName ?? ''); setLastName(auth.user.lastName ?? ''); } }, [auth.user]);
+  useEffect(() => { if (!resendSeconds) return; const timer = setInterval(() => setResendSeconds((value) => Math.max(0, value - 1)), 1000); return () => clearInterval(timer); }, [resendSeconds]);
 
   const saveProfile = async () => {
     Keyboard.dismiss();
@@ -155,7 +173,13 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
   </ScrollView>;
 
   const submit = async () => {
-    setBusy(true); setError('');
+    Keyboard.dismiss(); setError('');
+    if (!validEmail(email)) return setError('Enter a valid email address.');
+    if ((mode === 'login' || mode === 'register' || mode === 'confirmReset') && !password) return setError('Enter your password.');
+    if ((mode === 'register' || mode === 'confirmReset') && !validPassword(password)) return setError('Use a password with at least 8 characters.');
+    if ((mode === 'register' || mode === 'confirmReset') && password !== confirmPassword) return setError('The passwords do not match.');
+    if ((mode === 'confirm' || mode === 'confirmReset') && code.length !== 6) return setError('Enter the six-digit code from your email.');
+    setBusy(true);
     try {
       if (mode === 'login') await auth.login(email, password);
       if (mode === 'register') {
@@ -163,31 +187,34 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
         if (!firstName.trim() || !lastName.trim()) throw new Error('First name and surname are required.');
         if (!(await usernameAvailable(username.trim()))) throw new Error('That username is already taken.');
         const step = await auth.register(email, password, username, firstName, lastName);
-        if (step === 'CONFIRM_SIGN_UP') { setPassword(''); setMode('confirm'); }
+        if (step === 'CONFIRM_SIGN_UP') { setConfirmPassword(''); setResendSeconds(30); setMode('confirm'); }
         else { Alert.alert('Account created', 'You can now sign in.'); setMode('login'); }
       }
-      if (mode === 'confirm') { await auth.confirmRegistration(email, code); Alert.alert('Email verified', 'You can now sign in.'); setCode(''); setMode('login'); }
-      if (mode === 'requestReset') { await auth.requestPasswordReset(email); setMode('confirmReset'); }
+      if (mode === 'confirm') { await auth.confirmRegistration(email, code); await auth.login(email, password); Alert.alert('You’re all set', 'Your email is verified and your Yahtzee Hub account is ready.'); setCode(''); setPassword(''); }
+      if (mode === 'requestReset') { await auth.requestPasswordReset(email); setResendSeconds(30); setMode('confirmReset'); }
       if (mode === 'confirmReset') { await auth.finishPasswordReset(email, code, password); Alert.alert('Password updated', 'You can now sign in.'); setCode(''); setPassword(''); setMode('login'); }
-    } catch (caught) { setError(caught instanceof Error ? caught.message : 'Authentication failed.'); }
+    } catch (caught) { setError(friendlyAuthError(caught)); }
     finally { setBusy(false); }
   };
 
   const headings: Record<Mode, [string, string]> = {
     login: ['Welcome Back', 'Use your existing Yahtzee account.'], register: ['Create Account', 'Use it on both web and mobile.'],
-    confirm: ['Verify Email', 'Enter the code sent to your email.'], requestReset: ['Reset Password', 'We will email you a reset code.'],
-    confirmReset: ['Choose Password', 'Enter your code and new password.'],
+    confirm: ['Verify Email', `We sent a six-digit code to ${maskedEmail(email)}.`], requestReset: ['Reset Password', 'Enter your account email and we’ll send a secure reset code.'],
+    confirmReset: ['Choose Password', `Enter the code sent to ${maskedEmail(email)}, then choose a new password.`],
   };
 
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
     <View style={styles.formIntro}><Text style={styles.formTitle}>{headings[mode][0]}</Text><Text style={styles.formSubtitle}>{headings[mode][1]}</Text></View>
-    {mode === 'register' && <><TextInput value={username} onChangeText={setUsername} placeholder="Unique username" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="none" autoCorrect={false} /><TextInput value={firstName} onChangeText={setFirstName} placeholder="First name (private)" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="words" /><TextInput value={lastName} onChangeText={setLastName} placeholder="Surname (private)" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="words" /></>}
-    <TextInput value={email} onChangeText={setEmail} placeholder="Email" placeholderTextColor={colors.muted} style={styles.input} keyboardType="email-address" autoCapitalize="none" autoComplete="email" editable={mode !== 'confirm' && mode !== 'confirmReset'} />
-    {(mode === 'confirm' || mode === 'confirmReset') && <TextInput value={code} onChangeText={setCode} placeholder="Verification code" placeholderTextColor={colors.muted} style={styles.input} keyboardType="number-pad" />}
-    {(mode === 'login' || mode === 'register' || mode === 'confirmReset') && <TextInput value={password} onChangeText={setPassword} placeholder={mode === 'confirmReset' ? 'New password' : 'Password'} placeholderTextColor={colors.muted} style={styles.input} secureTextEntry />}
+    {mode === 'register' && <><Text style={styles.authLabel}>Public username</Text><TextInput value={username} onChangeText={setUsername} placeholder="3–20 letters, numbers or underscores" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="none" autoCorrect={false} /><Text style={styles.authLabel}>First name <Text style={styles.privateLabel}>PRIVATE</Text></Text><TextInput value={firstName} onChangeText={setFirstName} placeholder="First name" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="words" /><Text style={styles.authLabel}>Surname <Text style={styles.privateLabel}>PRIVATE</Text></Text><TextInput value={lastName} onChangeText={setLastName} placeholder="Surname" placeholderTextColor={colors.muted} style={styles.input} autoCapitalize="words" /></>}
+    <Text style={styles.authLabel}>Email</Text><TextInput value={email} onChangeText={(value) => { setEmail(value); setError(''); }} placeholder="you@example.com" placeholderTextColor={colors.muted} style={styles.input} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" editable={mode !== 'confirm' && mode !== 'confirmReset'} />
+    {(mode === 'confirm' || mode === 'confirmReset') && <><Text style={styles.authLabel}>Six-digit code</Text><TextInput value={code} onChangeText={(value) => setCode(cleanCode(value))} placeholder="000000" placeholderTextColor={colors.muted} style={[styles.input, styles.codeInput]} keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code" maxLength={6} /></>}
+    {(mode === 'login' || mode === 'register' || mode === 'confirmReset') && <><Text style={styles.authLabel}>{mode === 'confirmReset' ? 'New password' : 'Password'}</Text><View style={styles.passwordRow}><TextInput value={password} onChangeText={(value) => { setPassword(value); setError(''); }} placeholder="At least 8 characters" placeholderTextColor={colors.muted} style={styles.passwordInput} secureTextEntry={!showPassword} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} /><Pressable accessibilityLabel={showPassword ? 'Hide password' : 'Show password'} onPress={() => setShowPassword((value) => !value)} style={styles.eyeButton}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color={colors.cyan} /></Pressable></View></>}
+    {(mode === 'register' || mode === 'confirmReset') && <><Text style={styles.authLabel}>Confirm password</Text><TextInput value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Re-enter password" placeholderTextColor={colors.muted} style={styles.input} secureTextEntry={!showPassword} autoComplete="new-password" /><Text style={styles.passwordHint}>Use at least 8 characters.</Text></>}
     {error ? <Text style={styles.error}>{error}</Text> : null}
     <Pressable disabled={busy} onPress={() => void submit()} style={styles.button}><Text style={styles.buttonText}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : mode === 'requestReset' ? 'Send Reset Code' : mode === 'confirmReset' ? 'Reset Password' : 'Verify Email'}</Text></Pressable>
-    {mode === 'confirm' && <Pressable onPress={() => void auth.resendRegistrationCode(email).then(() => Alert.alert('Code sent')).catch((caught) => setError(caught instanceof Error ? caught.message : 'Unable to resend code.'))}><Text style={styles.link}>Resend verification code</Text></Pressable>}
+    {mode === 'confirm' && <Pressable disabled={busy || resendSeconds > 0} onPress={() => void auth.resendRegistrationCode(email).then(() => { setResendSeconds(30); Alert.alert('New code sent', `Check ${maskedEmail(email)}.`); }).catch((caught) => setError(friendlyAuthError(caught)))}><Text style={[styles.link, resendSeconds > 0 && styles.disabledLink]}>{resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : 'Resend verification code'}</Text></Pressable>}
+    {mode === 'confirmReset' && <Pressable disabled={busy || resendSeconds > 0} onPress={() => void auth.requestPasswordReset(email).then(() => { setResendSeconds(30); Alert.alert('New code sent', `Check ${maskedEmail(email)}.`); }).catch((caught) => setError(friendlyAuthError(caught)))}><Text style={[styles.link, resendSeconds > 0 && styles.disabledLink]}>{resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : 'Resend reset code'}</Text></Pressable>}
+    {(mode === 'confirm' || mode === 'confirmReset') && <Pressable onPress={() => { setCode(''); setError(''); setMode(mode === 'confirm' ? 'register' : 'requestReset'); }}><Text style={styles.link}>Use a different email</Text></Pressable>}
     {mode === 'login' && <><Pressable onPress={() => setMode('requestReset')}><Text style={styles.link}>Forgot password?</Text></Pressable><Pressable onPress={() => setMode('register')}><Text style={styles.link}>New here? Create an account</Text></Pressable></>}
     {mode !== 'login' && <Pressable onPress={() => { setMode('login'); setError(''); }}><Text style={styles.link}>Back to sign in</Text></Pressable>}
   </ScrollView>;
@@ -195,7 +222,7 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
 
 const styles = StyleSheet.create({
   content: { flexGrow: 1, padding: 20, paddingBottom: 150 }, loader: { flex: 1 }, formIntro: { marginBottom: 20 }, formTitle: { color: colors.yellow, fontSize: 24, fontWeight: '900' }, formSubtitle: { color: colors.mint, fontSize: 12, lineHeight: 18, marginTop: 4 },
-  input: { backgroundColor: colors.surface, color: colors.white, borderColor: colors.cyan, borderWidth: 1, borderRadius: 12, padding: 15, marginBottom: 12, fontSize: 16 }, button: { backgroundColor: colors.cyan, padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 6 }, buttonText: { color: colors.background, fontWeight: '900', fontSize: 16 }, error: { color: colors.danger, marginBottom: 8 }, link: { color: colors.pink, textAlign: 'center', marginTop: 18, fontWeight: '700' },
+  input: { backgroundColor: colors.surface, color: colors.white, borderColor: colors.cyan, borderWidth: 1, borderRadius: 12, padding: 15, marginBottom: 12, fontSize: 16 }, authLabel: { color: colors.mint, fontSize: 12, fontWeight: '900', marginBottom: 6 }, privateLabel: { color: colors.muted, fontSize: 8 }, passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.cyan, borderWidth: 1, borderRadius: 12, marginBottom: 12 }, passwordInput: { flex: 1, color: colors.white, padding: 15, fontSize: 16 }, eyeButton: { width: 50, minHeight: 50, alignItems: 'center', justifyContent: 'center' }, codeInput: { textAlign: 'center', letterSpacing: 10, fontSize: 22, fontWeight: '900' }, passwordHint: { color: colors.muted, fontSize: 11, marginTop: -5, marginBottom: 12 }, button: { backgroundColor: colors.cyan, padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 6 }, buttonText: { color: colors.background, fontWeight: '900', fontSize: 16 }, error: { color: colors.danger, marginBottom: 8 }, link: { color: colors.pink, textAlign: 'center', marginTop: 18, fontWeight: '700' }, disabledLink: { color: colors.muted },
   profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 18, padding: 18, marginBottom: 2 },
   preferenceRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 13, padding: 12 },
   notificationCard: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 13, padding: 12 }, preferenceRowInner: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10 }, timeControl: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, paddingHorizontal: 12, borderTopColor: '#2d3c40', borderTopWidth: 1 }, timeButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderColor: '#315a5e', borderWidth: 1, backgroundColor: colors.background }, timeValue: { color: colors.yellow, fontSize: 17, fontWeight: '900', textAlign: 'center' }, timeLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 1, textAlign: 'center', marginTop: 2 },
