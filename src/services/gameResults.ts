@@ -7,10 +7,11 @@ export type ResultMode = 'SOLO' | 'DAILY';
 export interface GameResult extends GameResultMetrics {
   id: string; userId: string; username: string; mode: ResultMode; modeDate: string;
   challengeDate?: string; completedAt: string; yahtzeeOnFinalRoll: boolean;
+  scorecard?: string;
 }
 
 const client = generateClient();
-const fields = 'id userId username mode modeDate challengeDate score completedAt yahtzeeCount earnedUpperBonus completedSmallStraight completedLargeStraight noZeroScores yahtzeeOnFinalRoll';
+const fields = 'id userId username mode modeDate challengeDate score completedAt yahtzeeCount earnedUpperBonus completedSmallStraight completedLargeStraight noZeroScores yahtzeeOnFinalRoll scorecard';
 
 async function authToken() {
   const session = await fetchAuthSession();

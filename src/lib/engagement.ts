@@ -7,6 +7,7 @@ export interface GameResultMetrics {
   completedSmallStraight: boolean;
   completedLargeStraight: boolean;
   noZeroScores: boolean;
+  scorecard?: string;
 }
 
 export const resultMetrics = (entries: ScoreEntry[]): GameResultMetrics => ({
@@ -16,6 +17,7 @@ export const resultMetrics = (entries: ScoreEntry[]): GameResultMetrics => ({
   completedSmallStraight: entries.some((entry) => entry.category === 'Small Straight' && entry.score === 30),
   completedLargeStraight: entries.some((entry) => entry.category === 'Large Straight' && entry.score === 40),
   noZeroScores: entries.length === 13 && entries.every((entry) => entry.score > 0),
+  scorecard: JSON.stringify(Object.fromEntries(entries.map((entry) => [entry.category, entry.score]))),
 });
 
 export const currentDailyStreak = (dateKeys: string[], today: string) => {
