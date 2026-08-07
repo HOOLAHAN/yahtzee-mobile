@@ -76,7 +76,7 @@ export default function App() {
     if (!enabled) { await disableDailyReminders(); setRemindersEnabled(false); return; }
     const granted = await enableDailyReminders(reminderHour);
     setRemindersEnabled(granted);
-    if (!granted) Alert.alert('Notifications are off', 'Enable notifications for Yahtzee Hub in iPhone Settings to receive Daily Challenge reminders.');
+    if (!granted) Alert.alert('Notifications are off', 'Enable notifications for Yahtzee Hub in your device settings to receive Daily Challenge reminders.');
   };
   const changeReminderHour = async (hour: number) => { setReminderHour(hour); await updateReminderHour(hour); };
   const handleDailyCompleted = useCallback(() => { void dailyChallengeCompleted(); }, []);

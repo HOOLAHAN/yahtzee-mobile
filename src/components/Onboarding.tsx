@@ -6,7 +6,7 @@ import { colors } from '../theme';
 const pages = [
   { icon: 'dice-outline' as const, eyebrow: 'WELCOME', title: 'Yahtzee, your way', copy: 'Play digitally, challenge the computer, share one phone, or keep score while using real dice.' },
   { icon: 'sunny-outline' as const, eyebrow: 'EVERY DAY', title: 'One shared challenge', copy: 'Everyone receives the same candidate dice. Your holds and category choices decide your place on today’s leaderboard.' },
-  { icon: 'trophy-outline' as const, eyebrow: 'YOUR PROGRESS', title: 'Scores worth returning for', copy: 'Create an optional account to save results, build streaks, earn achievements and compete across web and iPhone.' },
+  { icon: 'trophy-outline' as const, eyebrow: 'YOUR PROGRESS', title: 'Scores worth returning for', copy: 'Create an optional account to save results, build streaks, earn achievements and compete across web and mobile.' },
 ];
 
 export function Onboarding({ visible, onFinish, onStartDaily }: { visible: boolean; onFinish: () => void; onStartDaily: () => void }) {

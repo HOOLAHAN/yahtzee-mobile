@@ -1,6 +1,8 @@
 import { Linking, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { colors, playerProfiles } from '../theme';
+import { sharedAppAchievementKey } from '../lib/achievements';
 
 const appStoreUrl = 'https://apps.apple.com/gb/app/yahtzee-hub/id6794910138';
 
@@ -28,10 +30,13 @@ const scoring = [
 ];
 
 export function AboutScreen() {
-  const shareApp = () => void Share.share({ title: 'Yahtzee Hub', message: `Play Yahtzee Hub with me — digital dice, scorecards, daily challenges and leaderboards. Download it for iPhone: ${appStoreUrl}`, url: appStoreUrl });
+  const shareApp = async () => {
+    const result = await Share.share({ title: 'Yahtzee Hub', message: `Play Yahtzee Hub with me — digital dice, scorecards, daily challenges and leaderboards. Get the app: ${appStoreUrl}`, url: appStoreUrl });
+    if (result.action === Share.sharedAction) await AsyncStorage.setItem(sharedAppAchievementKey, 'true');
+  };
   return <ScrollView contentContainerStyle={styles.content}>
     <View style={styles.hero}><View style={styles.heroIcon}><Ionicons name="dice-outline" size={30} color={colors.cyan} /></View><View style={styles.heroCopy}><Text style={styles.heroTitle}>One app, four ways to play</Text><Text style={styles.intro}>Roll digitally, challenge the computer, share the phone, or keep score for a table using real dice.</Text></View></View>
-    <View style={styles.shareCard}><View style={styles.shareCopy}><Text style={styles.shareTitle}>Bring someone to game night</Text><Text style={styles.shareDescription}>Send friends a direct App Store link to Yahtzee Hub. Currently available for iPhone and iPad.</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Share Yahtzee Hub" onPress={shareApp} style={styles.shareButton}><Ionicons name="share-social-outline" size={19} color={colors.background} /><Text style={styles.shareButtonText}>Share App</Text></Pressable></View>
+    <View style={styles.shareCard}><View style={styles.shareCopy}><Text style={styles.shareTitle}>Bring someone to game night</Text><Text style={styles.shareDescription}>Send friends a link to Yahtzee Hub. Available on iPhone and iPad today, with Android planned.</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Share Yahtzee Hub" onPress={() => void shareApp()} style={styles.shareButton}><Ionicons name="share-social-outline" size={19} color={colors.background} /><Text style={styles.shareButtonText}>Share App</Text></Pressable></View>
 
     <Text style={styles.heading}>Ways to Play</Text>
     <View style={styles.modeGrid}>{playModes.map((mode) => <View key={mode.title} style={[styles.modeCard, { borderColor: mode.color }]}><View style={[styles.modeIcon, { backgroundColor: `${mode.color}1f` }]}><Ionicons name={mode.icon} size={21} color={mode.color} /></View><Text style={[styles.modeTitle, { color: mode.color }]}>{mode.title}</Text><Text style={styles.modeDescription}>{mode.description}</Text></View>)}</View>

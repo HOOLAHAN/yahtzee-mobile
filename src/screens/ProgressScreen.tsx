@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { currentDailyStreak } from '../lib/engagement';
 import { localDateKey } from '../lib/dailyChallenge';
 import { fetchMyGameResults, GameResult } from '../services/gameResults';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
+import { sharedAppAchievementKey } from '../lib/achievements';
 
-interface Achievement { id: string; name: string; description: string; icon: keyof typeof Ionicons.glyphMap; unlocked: (results: GameResult[], streak: number) => boolean }
+interface Achievement { id: string; name: string; description: string; icon: keyof typeof Ionicons.glyphMap; unlocked: (results: GameResult[], streak: number, sharedApp: boolean) => boolean }
 const achievements: Achievement[] = [
   { id: 'first_game', name: 'First Roll', description: 'Complete a solo game', icon: 'dice', unlocked: (r) => r.some((x) => x.mode === 'SOLO') },
   { id: 'solo_5', name: 'Getting Started', description: 'Complete 5 solo games', icon: 'flag', unlocked: (r) => r.filter((x) => x.mode === 'SOLO').length >= 5 },
@@ -22,6 +24,7 @@ const achievements: Achievement[] = [
   { id: 'both_straights', name: 'Straight Shooter', description: 'Score both straights in one game', icon: 'git-compare', unlocked: (r) => r.some((x) => x.completedSmallStraight && x.completedLargeStraight) },
   { id: 'clean_card', name: 'Clean Card', description: 'Finish without a zero', icon: 'checkmark-done-circle', unlocked: (r) => r.some((x) => x.noZeroScores) },
   { id: 'daily_first', name: 'Daily Debut', description: 'Complete a Daily Challenge', icon: 'sunny', unlocked: (r) => r.some((x) => x.mode === 'DAILY') },
+  { id: 'share_app', name: 'Spread the Word', description: 'Share Yahtzee Hub with someone', icon: 'share-social', unlocked: (_, __, shared) => shared },
   { id: 'streak_3', name: 'On a Roll', description: 'Reach a 3-day streak', icon: 'flame', unlocked: (_, s) => s >= 3 },
   { id: 'streak_7', name: 'Full Week', description: 'Reach a 7-day streak', icon: 'bonfire', unlocked: (_, s) => s >= 7 },
   { id: 'streak_30', name: 'Daily Devotion', description: 'Reach a 30-day streak', icon: 'trophy', unlocked: (_, s) => s >= 30 },
@@ -32,6 +35,7 @@ export function ProgressScreen() {
   const [results, setResults] = useState<GameResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [sharedApp, setSharedApp] = useState(false);
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true); setError('');
@@ -39,10 +43,10 @@ export function ProgressScreen() {
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to load progress.'); }
     finally { setLoading(false); }
   }, [user]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); void AsyncStorage.getItem(sharedAppAchievementKey).then((value) => setSharedApp(value === 'true')); }, [load]);
   const dailyDates = useMemo(() => results.filter((result) => result.mode === 'DAILY' && result.challengeDate).map((result) => result.challengeDate!), [results]);
   const streak = currentDailyStreak(dailyDates, localDateKey());
-  const unlocked = achievements.filter((achievement) => achievement.unlocked(results, streak)).length;
+  const unlocked = achievements.filter((achievement) => achievement.unlocked(results, streak, sharedApp)).length;
   const best = results.reduce((value, result) => Math.max(value, result.score), 0);
   const average = results.length ? Math.round(results.reduce((sum, result) => sum + result.score, 0) / results.length) : 0;
 
@@ -52,7 +56,7 @@ export function ProgressScreen() {
     <View style={styles.stats}><View style={styles.stat}><Text style={styles.statValue}>{results.length}</Text><Text style={styles.statLabel}>Games</Text></View><View style={styles.stat}><Text style={styles.statValue}>{best}</Text><Text style={styles.statLabel}>Best</Text></View><View style={styles.stat}><Text style={styles.statValue}>{average}</Text><Text style={styles.statLabel}>Average</Text></View></View>
     <View style={styles.heading}><Text style={styles.headingText}>Achievements</Text><Text style={styles.count}>{unlocked}/{achievements.length}</Text></View>
     {error ? <View style={styles.errorCard}><Text style={styles.error}>{error}</Text><Pressable onPress={() => void load()}><Text style={styles.retry}>Try again</Text></Pressable></View> : null}
-    {loading && !results.length ? <ActivityIndicator size="large" color={colors.cyan} /> : achievements.map((achievement) => { const earned = achievement.unlocked(results, streak); return <View key={achievement.id} style={[styles.badge, earned && styles.badgeEarned]}><View style={[styles.badgeIcon, earned && styles.badgeIconEarned]}><Ionicons name={achievement.icon} size={22} color={earned ? colors.background : colors.muted} /></View><View style={styles.badgeCopy}><Text style={[styles.badgeName, !earned && styles.locked]}>{achievement.name}</Text><Text style={styles.badgeDescription}>{achievement.description}</Text></View>{earned ? <Ionicons name="checkmark-circle" size={21} color={colors.cyan} /> : <Ionicons name="lock-closed" size={17} color={colors.muted} />}</View>; })}
+    {loading && !results.length ? <ActivityIndicator size="large" color={colors.cyan} /> : achievements.map((achievement) => { const earned = achievement.unlocked(results, streak, sharedApp); return <View key={achievement.id} style={[styles.badge, earned && styles.badgeEarned]}><View style={[styles.badgeIcon, earned && styles.badgeIconEarned]}><Ionicons name={achievement.icon} size={22} color={earned ? colors.background : colors.muted} /></View><View style={styles.badgeCopy}><Text style={[styles.badgeName, !earned && styles.locked]}>{achievement.name}</Text><Text style={styles.badgeDescription}>{achievement.description}</Text></View>{earned ? <Ionicons name="checkmark-circle" size={21} color={colors.cyan} /> : <Ionicons name="lock-closed" size={17} color={colors.muted} />}</View>; })}
   </ScrollView>;
 }
 
