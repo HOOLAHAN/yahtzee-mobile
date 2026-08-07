@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, Style
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
-import { updateMyProfile, usernameAvailable } from '../services/profiles';
+import { getMyProfile, updateMyPreferences, updateMyProfile, usernameAvailable } from '../services/profiles';
 
 type Mode = 'login' | 'register' | 'confirm' | 'requestReset' | 'confirmReset';
 
@@ -45,6 +45,7 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
   const [resendSeconds, setResendSeconds] = useState(0);
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const [oldPassword, setOldPassword] = useState(''); const [newPassword, setNewPassword] = useState('');
+  const [showManagementPasswords, setShowManagementPasswords] = useState(false);
   const [managementError, setManagementError] = useState(''); const [managementBusy, setManagementBusy] = useState(false);
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
@@ -52,6 +53,8 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
   const [profileError, setProfileError] = useState('');
 
   useEffect(() => { if (auth.user) { setUsername(auth.user.username); setFirstName(auth.user.firstName ?? ''); setLastName(auth.user.lastName ?? ''); } }, [auth.user]);
+  useEffect(() => { if (!auth.user) return; void getMyProfile().then((profile) => { onScoreSuggestionsChange?.(profile.scoreSuggestionsEnabled); onReminderHourChange?.(profile.dailyReminderHour); onRemindersChange?.(profile.dailyReminderEnabled); }).catch(() => undefined); }, [auth.user]);
+  const savePreferences = (suggestions: boolean, reminders: boolean, hour: number) => { if (auth.user) void updateMyPreferences(suggestions, reminders, hour).catch(() => setManagementError('Your preference changed on this device, but could not be synced.')); };
   useEffect(() => { if (!resendSeconds) return; const timer = setInterval(() => setResendSeconds((value) => Math.max(0, value - 1)), 1000); return () => clearInterval(timer); }, [resendSeconds]);
 
   const saveProfile = async () => {
@@ -122,11 +125,11 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
 
     <Text style={styles.sectionTitle}>Gameplay</Text>
     <Text style={styles.sectionDescription}>Choose how much guidance appears while you play.</Text>
-    <View style={styles.preferenceRow}><View style={styles.actionIcon}><Ionicons name="sparkles-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Score suggestions</Text><Text style={styles.actionDescription}>Highlight the recommended category and show “Best now”</Text></View><Switch accessibilityLabel="Score suggestions" value={scoreSuggestionsEnabled} onValueChange={onScoreSuggestionsChange} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={scoreSuggestionsEnabled ? colors.cyan : colors.muted} /></View>
+    <View style={styles.preferenceRow}><View style={styles.actionIcon}><Ionicons name="sparkles-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Score suggestions</Text><Text style={styles.actionDescription}>Highlight the recommended category and show “Best now”</Text></View><Switch accessibilityLabel="Score suggestions" value={scoreSuggestionsEnabled} onValueChange={(value) => { onScoreSuggestionsChange?.(value); savePreferences(value, remindersEnabled, reminderHour); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={scoreSuggestionsEnabled ? colors.cyan : colors.muted} /></View>
 
     <Text style={styles.sectionTitle}>Notifications</Text>
     <Text style={styles.sectionDescription}>Get one local reminder when the Daily Challenge is waiting. Completed days are skipped.</Text>
-    <View style={styles.notificationCard}><View style={styles.preferenceRowInner}><View style={styles.actionIcon}><Ionicons name="notifications-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Daily Challenge reminder</Text><Text style={styles.actionDescription}>{displayHour(reminderHour)} in your local timezone</Text></View><Switch accessibilityLabel="Daily Challenge reminder" value={remindersEnabled} onValueChange={onRemindersChange} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={remindersEnabled ? colors.cyan : colors.muted} /></View>{remindersEnabled && <View style={styles.timeControl}><Pressable accessibilityLabel="Move reminder one hour earlier" onPress={() => onReminderHourChange?.((reminderHour + 23) % 24)} style={styles.timeButton}><Ionicons name="remove" size={20} color={colors.cyan} /></Pressable><View><Text style={styles.timeValue}>{displayHour(reminderHour)}</Text><Text style={styles.timeLabel}>LOCAL TIME</Text></View><Pressable accessibilityLabel="Move reminder one hour later" onPress={() => onReminderHourChange?.((reminderHour + 1) % 24)} style={styles.timeButton}><Ionicons name="add" size={20} color={colors.cyan} /></Pressable></View>}</View>
+    <View style={styles.notificationCard}><View style={styles.preferenceRowInner}><View style={styles.actionIcon}><Ionicons name="notifications-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Daily Challenge reminder</Text><Text style={styles.actionDescription}>{displayHour(reminderHour)} in your local timezone</Text></View><Switch accessibilityLabel="Daily Challenge reminder" value={remindersEnabled} onValueChange={(value) => { onRemindersChange?.(value); savePreferences(scoreSuggestionsEnabled, value, reminderHour); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={remindersEnabled ? colors.cyan : colors.muted} /></View>{remindersEnabled && <View style={styles.timeControl}><Pressable accessibilityLabel="Move reminder one hour earlier" onPress={() => { const hour = (reminderHour + 23) % 24; onReminderHourChange?.(hour); savePreferences(scoreSuggestionsEnabled, remindersEnabled, hour); }} style={styles.timeButton}><Ionicons name="remove" size={20} color={colors.cyan} /></Pressable><View><Text style={styles.timeValue}>{displayHour(reminderHour)}</Text><Text style={styles.timeLabel}>LOCAL TIME</Text></View><Pressable accessibilityLabel="Move reminder one hour later" onPress={() => { const hour = (reminderHour + 1) % 24; onReminderHourChange?.(hour); savePreferences(scoreSuggestionsEnabled, remindersEnabled, hour); }} style={styles.timeButton}><Ionicons name="add" size={20} color={colors.cyan} /></Pressable></View>}</View>
 
     <Text style={styles.sectionTitle}>Security & access</Text>
     <Text style={styles.sectionDescription}>This account is shared by the Yahtzee website and mobile app.</Text>
@@ -144,11 +147,11 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
       </Pressable>
     </View>
     {showPasswordChange && <View style={styles.managementPanel}>
-      <TextInput value={oldPassword} onChangeText={setOldPassword} placeholder="Current password" placeholderTextColor={colors.muted} style={styles.input} secureTextEntry autoComplete="current-password" />
-      <TextInput value={newPassword} onChangeText={setNewPassword} placeholder="New password" placeholderTextColor={colors.muted} style={styles.input} secureTextEntry autoComplete="new-password" />
+      <View style={styles.passwordRow}><TextInput value={oldPassword} onChangeText={setOldPassword} placeholder="Current password" placeholderTextColor={colors.muted} style={styles.passwordInput} secureTextEntry={!showManagementPasswords} autoComplete="current-password" /><Pressable accessibilityLabel={showManagementPasswords ? 'Hide passwords' : 'Show passwords'} onPress={() => setShowManagementPasswords((value) => !value)} style={styles.eyeButton}><Ionicons name={showManagementPasswords ? 'eye-off-outline' : 'eye-outline'} size={21} color={colors.cyan} /></Pressable></View>
+      <View style={styles.passwordRow}><TextInput value={newPassword} onChangeText={setNewPassword} placeholder="New password" placeholderTextColor={colors.muted} style={styles.passwordInput} secureTextEntry={!showManagementPasswords} autoComplete="new-password" /><Pressable accessibilityLabel={showManagementPasswords ? 'Hide passwords' : 'Show passwords'} onPress={() => setShowManagementPasswords((value) => !value)} style={styles.eyeButton}><Ionicons name={showManagementPasswords ? 'eye-off-outline' : 'eye-outline'} size={21} color={colors.cyan} /></Pressable></View>
       <Pressable disabled={managementBusy} onPress={() => void changePassword()} style={styles.button}><Text style={styles.buttonText}>{managementBusy ? 'Updating…' : 'Update Password'}</Text></Pressable>
     </View>}
-    {managementError ? <Text style={styles.error}>{managementError}</Text> : null}
+    {managementError ? <Text style={[styles.error, { marginTop: 14 }]}>{managementError}</Text> : null}
     <Text style={[styles.sectionTitle, styles.dangerTitle]}>Danger zone</Text>
     <Pressable disabled={managementBusy} onPress={() => { setDeleteConfirmation(''); setShowDeleteConfirmation(true); }} style={styles.deleteButton}>
       <Ionicons name="trash-outline" size={21} color={colors.danger} />
