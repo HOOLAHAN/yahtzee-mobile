@@ -1,5 +1,6 @@
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession } from 'aws-amplify/auth';
+import { graphqlWithDevLog } from '../lib/apiLogger';
 
 export interface LeaderboardScore {
   id: string;
@@ -32,7 +33,7 @@ const verifySubmittedScore = `
 `;
 
 export async function fetchLeaderboard() {
-  const result = await client.graphql({
+  const result = await graphqlWithDevLog(client, {
     query: listScores,
     authMode: 'apiKey',
     variables: { limit: 100 },
@@ -44,7 +45,7 @@ export async function fetchLeaderboard() {
 }
 
 export async function fetchUserScores(userId: string) {
-  const result = await client.graphql({
+  const result = await graphqlWithDevLog(client, {
     query: `query UserScores($userId: String!, $limit: Int) {
       listScores(filter: { userId: { eq: $userId } }, limit: $limit) {
         items { id userId username score timestamp }
@@ -74,7 +75,7 @@ export async function submitScore(id: string, score: number, userId: string) {
     if (!session.tokens?.idToken) throw new Error('Your sign-in session has expired. Please sign out and sign in again.');
 
     console.info('[scores.submit] Sending authenticated score', { score, userId, tokenExpiresAt: session.tokens.idToken.payload.exp });
-    const result = await client.graphql({ query: submitScoreMutation, authMode: 'userPool', authToken: session.tokens.idToken.toString(), variables: { id, score } });
+    const result = await graphqlWithDevLog(client, { query: submitScoreMutation, authMode: 'userPool', authToken: session.tokens.idToken.toString(), variables: { id, score } });
     if (!('data' in result) || !result.data.submitScore) throw new Error('AppSync returned no score after submission.');
     console.info('[scores.submit] Score accepted', { id: result.data.submitScore.id, score: result.data.submitScore.score });
     return result.data.submitScore;
@@ -86,7 +87,7 @@ export async function submitScore(id: string, score: number, userId: string) {
     // response reaches the client. Verify that ambiguous outcome before showing
     // a failure or allowing a retry that could create a duplicate score.
     try {
-      const verification = await client.graphql({ query: verifySubmittedScore, authMode: 'apiKey', variables: { id } });
+      const verification = await graphqlWithDevLog(client, { query: verifySubmittedScore, authMode: 'apiKey', variables: { id } });
       const committed = 'data' in verification ? verification.data.getScore as LeaderboardScore | null : null;
       // A game ID is generated once and persisted with its scorecard. Matching
       // the same user and score makes retries idempotent, even from a queue.

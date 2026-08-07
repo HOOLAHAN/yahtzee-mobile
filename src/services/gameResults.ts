@@ -1,6 +1,7 @@
 import { generateClient } from 'aws-amplify/api';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { GameResultMetrics } from '../lib/engagement';
+import { graphqlWithDevLog } from '../lib/apiLogger';
 
 export type ResultMode = 'SOLO' | 'DAILY';
 export interface GameResult extends GameResultMetrics {
@@ -21,7 +22,7 @@ async function authToken() {
 export async function createGameResult(input: Omit<GameResult, 'userId' | 'username'>) {
   const auth = await authToken();
   const { modeDate: _modeDate, completedAt: _completedAt, challengeDate, ...metrics } = input;
-  const result = await client.graphql({
+  const result = await graphqlWithDevLog(client, {
     query: `mutation SubmitGameResult($input:SubmitGameResultInput!){submitGameResult(input:$input){${fields}}}`,
     authMode: 'userPool', authToken: auth.token, variables: { input: { ...metrics, challengeDate } },
   });
@@ -30,7 +31,7 @@ export async function createGameResult(input: Omit<GameResult, 'userId' | 'usern
 }
 
 export async function fetchMyGameResults(userId: string, limit = 500) {
-  const result = await client.graphql({
+  const result = await graphqlWithDevLog(client, {
     query: `query MyGameResults($userId:String!,$limit:Int){gameResultsByUser(userId:$userId,sortDirection:DESC,limit:$limit){items{${fields}}}}`,
     authMode: 'apiKey', variables: { userId, limit },
   });
@@ -39,7 +40,7 @@ export async function fetchMyGameResults(userId: string, limit = 500) {
 }
 
 export async function fetchDailyResults(dateKey: string, limit = 100) {
-  const result = await client.graphql({
+  const result = await graphqlWithDevLog(client, {
     query: `query DailyResults($modeDate:String!,$limit:Int){gameResultsByModeDate(modeDate:$modeDate,sortDirection:DESC,limit:$limit){items{${fields}}}}`,
     authMode: 'apiKey', variables: { modeDate: `DAILY#${dateKey}`, limit },
   });
@@ -48,7 +49,7 @@ export async function fetchDailyResults(dateKey: string, limit = 100) {
 }
 
 export async function fetchSoloResults(limit = 500) {
-  const result = await client.graphql({
+  const result = await graphqlWithDevLog(client, {
     query: `query SoloResults($modeDate:String!,$limit:Int){gameResultsByModeDate(modeDate:$modeDate,sortDirection:DESC,limit:$limit){items{${fields}}}}`,
     authMode: 'apiKey', variables: { modeDate: 'SOLO#ALL', limit },
   });
@@ -57,7 +58,7 @@ export async function fetchSoloResults(limit = 500) {
 }
 
 export async function fetchAllDailyResults(limit = 500) {
-  const result = await client.graphql({
+  const result = await graphqlWithDevLog(client, {
     query: `query AllDailyResults($limit:Int){listGameResults(filter:{mode:{eq:DAILY}},limit:$limit){items{${fields}}}}`,
     authMode: 'apiKey', variables: { limit },
   });

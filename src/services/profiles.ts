@@ -1,12 +1,13 @@
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { generateClient } from 'aws-amplify/api';
+import { graphqlWithDevLog } from '../lib/apiLogger';
 
 const client = generateClient();
 export interface UserProfile { userId: string; username: string; firstName: string; lastName: string; scoreSuggestionsEnabled: boolean; dailyReminderEnabled: boolean; dailyReminderHour: number }
 const fields = 'userId username firstName lastName scoreSuggestionsEnabled dailyReminderEnabled dailyReminderHour';
 
 export async function usernameAvailable(username: string) {
-  const result = await client.graphql({ query: `query Available($username:String!){usernameAvailable(username:$username)}`, authMode: 'apiKey', variables: { username } });
+  const result = await graphqlWithDevLog(client, { query: `query Available($username:String!){usernameAvailable(username:$username)}`, authMode: 'apiKey', variables: { username } });
   return 'data' in result && result.data.usernameAvailable;
 }
 
@@ -14,7 +15,7 @@ async function authenticatedGraphql(query: string, variables?: Record<string, un
   const session = await fetchAuthSession();
   const token = session.tokens?.idToken?.toString();
   if (!token) throw new Error('Sign in required.');
-  return client.graphql({ query, variables, authMode: 'userPool', authToken: token });
+  return graphqlWithDevLog(client, { query, variables, authMode: 'userPool', authToken: token });
 }
 
 function profileResult<T>(result: unknown, field: string, fallback: string): T {
