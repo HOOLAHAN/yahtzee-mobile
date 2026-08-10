@@ -13,7 +13,7 @@ interface UserDetails {
 interface AuthValue {
   user: UserDetails | null;
   loading: boolean;
-  login(email: string, password: string): Promise<void>;
+  login(email: string, password: string): Promise<string>;
   register(email: string, password: string, username: string, firstName: string, lastName: string): Promise<string>;
   refreshUser(): Promise<void>;
   confirmRegistration(email: string, code: string): Promise<void>;
@@ -54,13 +54,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     user,
     loading,
     login: async (email, password) => {
-      await signIn({ username: email.trim(), password });
+      const result = await signIn({ username: email.trim(), password });
+      if (!result.isSignedIn) return result.nextStep.signInStep;
       const attributes = await fetchUserAttributes();
       if (attributes.preferred_username && attributes.given_name && attributes.family_name) {
         await updateMyProfile(attributes.preferred_username, attributes.given_name, attributes.family_name);
         await fetchAuthSession({ forceRefresh: true });
       }
       await refresh();
+      return 'DONE';
     },
     register: async (email, password, username, firstName, lastName) => {
       const result = await signUp({
