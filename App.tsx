@@ -14,6 +14,7 @@ import { AuthProvider, useAuth } from './src/state/AuthContext';
 import { flushPendingScores } from './src/services/pendingScores';
 import { colors } from './src/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import { Onboarding } from './src/components/Onboarding';
 import { dailyChallengeCompleted, disableDailyReminders, enableDailyReminders, refreshDailyReminders, updateReminderHour } from './src/services/dailyReminders';
@@ -97,7 +98,7 @@ export default function App() {
         </View>
         <View style={styles.tabBar}>
           {tabs.map((item) => (
-            <Pressable key={item.key} onPress={() => setTab(item.key)} style={[styles.tab, tab === item.key && styles.activeTabPill]}>
+            <Pressable key={item.key} onPress={() => { void Haptics.selectionAsync(); setTab(item.key); }} style={[styles.tab, tab === item.key && styles.activeTabPill]}>
               <Ionicons name={tab === item.key ? item.activeIcon : item.icon} size={23} color={tab === item.key ? colors.cyan : colors.muted} />
               <Text style={[styles.tabLabel, tab === item.key && styles.activeTab]}>{item.label}</Text>
             </Pressable>
