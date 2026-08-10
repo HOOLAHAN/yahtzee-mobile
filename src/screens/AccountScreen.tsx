@@ -53,7 +53,7 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
   const [profileError, setProfileError] = useState('');
 
   useEffect(() => { if (auth.user) { setUsername(auth.user.username); setFirstName(auth.user.firstName ?? ''); setLastName(auth.user.lastName ?? ''); } }, [auth.user]);
-  useEffect(() => { if (!auth.user) return; void getMyProfile().then((profile) => { onScoreSuggestionsChange?.(profile.scoreSuggestionsEnabled); onReminderHourChange?.(profile.dailyReminderHour); onRemindersChange?.(profile.dailyReminderEnabled); }).catch(() => undefined); }, [auth.user]);
+  useEffect(() => { if (!auth.user) return; void getMyProfile().then((profile) => { onScoreSuggestionsChange?.(profile.scoreSuggestionsEnabled); onRemindersChange?.(profile.dailyReminderEnabled); onReminderHourChange?.(profile.dailyReminderHour); }).catch(() => undefined); }, [auth.user]);
   const savePreferences = (suggestions: boolean, reminders: boolean, hour: number) => { if (auth.user) void updateMyPreferences(suggestions, reminders, hour).catch(() => setManagementError('Your preference changed on this device, but could not be synced.')); };
   useEffect(() => { if (!resendSeconds) return; const timer = setInterval(() => setResendSeconds((value) => Math.max(0, value - 1)), 1000); return () => clearInterval(timer); }, [resendSeconds]);
 

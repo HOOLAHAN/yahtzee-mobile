@@ -4,7 +4,10 @@ import * as Notifications from 'expo-notifications';
 export const reminderEnabledKey = 'yahtzee.daily-reminders.enabled.v1';
 export const reminderHourKey = 'yahtzee.daily-reminders.hour.v1';
 const reminderIdsKey = 'yahtzee.daily-reminders.ids.v1';
+const reminderType = 'dailyChallenge';
 export const defaultReminderHour = 19;
+
+let reminderOperation = Promise.resolve();
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
@@ -12,11 +15,24 @@ Notifications.setNotificationHandler({
 
 const dateKey = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
-async function cancelScheduledReminders() {
+const isDailyChallengeReminder = (request: Notifications.NotificationRequest) => {
+  const data = request.content.data;
+  return data?.reminderType === reminderType || (data?.destination === 'daily' && typeof data?.challengeDate === 'string');
+};
+
+async function cancelScheduledRemindersNow() {
   const rawIds = await AsyncStorage.getItem(reminderIdsKey);
-  const ids = rawIds ? JSON.parse(rawIds) as string[] : [];
-  await Promise.all(ids.map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => undefined)));
+  const storedIds = rawIds ? JSON.parse(rawIds) as string[] : [];
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  const ids = new Set([...storedIds, ...scheduled.filter(isDailyChallengeReminder).map((request) => request.identifier)]);
+  await Promise.all([...ids].map((id) => Notifications.cancelScheduledNotificationAsync(id).catch(() => undefined)));
   await AsyncStorage.removeItem(reminderIdsKey);
+}
+
+function queueReminderOperation<T>(operation: () => Promise<T>) {
+  const result = reminderOperation.catch(() => undefined).then(operation);
+  reminderOperation = result.then(() => undefined, () => undefined);
+  return result;
 }
 
 export async function loadReminderPreferences() {
@@ -24,8 +40,8 @@ export async function loadReminderPreferences() {
   return { enabled: enabled === 'true', hour: hour === null ? defaultReminderHour : Number(hour) };
 }
 
-export async function scheduleDailyReminders(hour: number) {
-  await cancelScheduledReminders();
+async function replaceDailyReminders(hour: number) {
+  await cancelScheduledRemindersNow();
   const completionKeys = await AsyncStorage.getAllKeys();
   const ids: string[] = [];
   const now = new Date();
@@ -40,7 +56,7 @@ export async function scheduleDailyReminders(hour: number) {
       content: {
         title: 'Today’s dice are waiting 🎲',
         body: 'Complete your Daily Challenge and protect your streak.',
-        data: { destination: 'daily', challengeDate },
+        data: { destination: 'daily', challengeDate, reminderType },
         sound: 'default',
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date },
@@ -48,6 +64,10 @@ export async function scheduleDailyReminders(hour: number) {
     ids.push(id);
   }
   await AsyncStorage.setItem(reminderIdsKey, JSON.stringify(ids));
+}
+
+export function scheduleDailyReminders(hour: number) {
+  return queueReminderOperation(() => replaceDailyReminders(hour));
 }
 
 export async function enableDailyReminders(hour = defaultReminderHour) {
@@ -61,7 +81,7 @@ export async function enableDailyReminders(hour = defaultReminderHour) {
 
 export async function disableDailyReminders() {
   await AsyncStorage.setItem(reminderEnabledKey, 'false');
-  await cancelScheduledReminders();
+  await queueReminderOperation(cancelScheduledRemindersNow);
 }
 
 export async function updateReminderHour(hour: number) {
