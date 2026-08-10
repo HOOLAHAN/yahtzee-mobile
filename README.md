@@ -24,7 +24,13 @@ cd /Users/iainhoolahan/Projects/yahtzee-mobile
 npm install
 ```
 
-Copy `.env.example` to `.env.local` and fill in the existing AWS resource values. `.env.local` is used by the local Metro development server; EAS cloud builds load the corresponding values from the EAS `development`, `preview`, or `production` environment selected by `eas.json`.
+Copy `.env.example` to `.env.local` and fill in the development AWS resource values. `.env.local` is used by the local Metro development server and should point at the isolated `sandbox` Amplify environment. EAS cloud builds load the corresponding values from the EAS `development`, `preview`, or `production` environment selected by `eas.json`.
+
+Development and production are deliberately separate. Local Metro and EAS
+development builds use the sandbox Cognito users and empty development
+leaderboards. TestFlight/App Store builds use the live backend and retain the
+existing production scores. Never copy production AWS values into `.env.local`
+for ordinary feature development.
 
 All `EXPO_PUBLIC_*` variables are embedded into the application bundle. The AppSync API key is therefore public, just as it is on the website, and is restricted to leaderboard reads. Never put AWS IAM access keys, Cognito client secrets, or other private credentials in these variables.
 
@@ -205,10 +211,19 @@ The current Daily Challenge reminders are scheduled locally on the device. They 
 
 ## Backend
 
-The mobile app shares the website's AWS Cognito, AppSync, DynamoDB, and profile-service Lambda resources. Deploying a new mobile binary does not deploy backend schema, resolver, table, or Lambda changes.
+Within each environment, the mobile app shares the website's AWS Cognito,
+AppSync, DynamoDB, and profile-service Lambda resources. The `sandbox`
+environment is used for development; the historical Amplify environment named
+`dev` is production. Deploying a new mobile binary does not deploy backend
+schema, resolver, table, or Lambda changes.
 
 Backend infrastructure and deployment files live in `/Users/iainhoolahan/Projects/yahtzee`. Before releasing a mobile feature that changes GraphQL operations, deploy and verify the corresponding backend change first, then confirm the production EAS environment still points at the live AppSync endpoint.
 
 Leaderboard reads use the public AppSync API key. Authenticated profile operations, preference syncing, score submission, achievements, and personal statistics use the signed-in user's Cognito session. Never replace those authenticated calls with client-supplied user IDs.
 
-The Amplify environment is named `dev` for historical reasons, but it currently represents the live shared backend. Treat `amplify push` as a production infrastructure operation. Do not assume that pushing the mobile or website `main` branch deploys AppSync changes; verify the hosting and infrastructure workflows separately.
+For a development backend push, use `npm run backend:push:sandbox` from the
+website repository. The wrapper selects the sandbox and handles the legacy
+Gen 1 environment-specific Cognito parameter safely. Treat any raw push while
+`dev` is active as a production infrastructure operation. Do not assume that
+pushing the mobile or website `main` branch deploys AppSync changes; verify the
+hosting and infrastructure workflows separately.
