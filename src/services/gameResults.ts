@@ -10,6 +10,15 @@ export interface GameResult extends GameResultMetrics {
   scorecard?: string;
 }
 
+export interface DailyRoundStanding {
+  challengeDate: string;
+  round: number;
+  score: number;
+  rank: number;
+  playerCount: number;
+  percentile: number;
+}
+
 const client = generateClient();
 const fields = 'id userId username mode modeDate challengeDate score completedAt yahtzeeCount earnedUpperBonus completedSmallStraight completedLargeStraight noZeroScores yahtzeeOnFinalRoll scorecard';
 
@@ -29,6 +38,16 @@ export async function createGameResult(input: Omit<GameResult, 'userId' | 'usern
   });
   if (!('data' in result) || !result.data.submitGameResult) throw new Error('Unable to save this completed game.');
   return result.data.submitGameResult as GameResult;
+}
+
+export async function submitDailyRoundProgress(challengeDate: string, round: number, score: number) {
+  const auth = await authToken();
+  const result = await graphqlWithDevLog(client, {
+    query: `mutation DailyRoundProgress($challengeDate:AWSDate!,$round:Int!,$score:Int!){submitDailyRoundProgress(challengeDate:$challengeDate,round:$round,score:$score){challengeDate round score rank playerCount percentile}}`,
+    authMode: 'userPool', authToken: auth.token, variables: { challengeDate, round, score },
+  });
+  if (!('data' in result) || !result.data.submitDailyRoundProgress) throw new Error('Unable to load your live Daily Challenge standing.');
+  return result.data.submitDailyRoundProgress as DailyRoundStanding;
 }
 
 export async function fetchMyGameResults(userId: string, limit = 500) {

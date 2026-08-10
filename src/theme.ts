@@ -24,3 +24,9 @@ export const playerProfiles = [
 ] as const;
 
 export const computerProfile = playerProfiles[1];
+
+export const dailyProfile = {
+  accent: colors.yellow,
+  score: colors.pink,
+  soft: '#303313',
+} as const;
