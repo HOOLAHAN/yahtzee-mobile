@@ -512,7 +512,8 @@ export function GameScreen({ chooserRequest = 0, dailyLaunchRequest = 0, onHeade
   };
 
   const clearGame = () => {
-    setHistories({ 1: [], 2: [] }); setCurrentPlayer(1); setViewingPlayer(1); setDice(initialDice); setHeld(new Set());
+    const startingPlayer: Player = computerOpponent ? 2 : 1;
+    setHistories({ 1: [], 2: [] }); setCurrentPlayer(startingPlayer); setViewingPlayer(startingPlayer); setDice(initialDice); setHeld(new Set());
     setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setSubmitted(false); setQueued(false); setShowScorecard(false); setDailyThrowIndex(0); setDailyDate(localDateKey()); setProgressRecorded(false); setYahtzeeOnFinalRoll(false); setDailyStanding(''); setDailyRoundStanding(null); setDailyStandingLoading(false);
     setGameId(`mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   };
@@ -537,6 +538,8 @@ export function GameScreen({ chooserRequest = 0, dailyLaunchRequest = 0, onHeade
       } catch { saved = null; }
     }
     setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); setVirtualDiceMode(mode === 'virtual'); setDailyMode(mode === 'daily'); setShowModeChooser(false); clearGame();
+    const startingPlayer: Player = mode === 'computer' ? 2 : 1;
+    setCurrentPlayer(startingPlayer); setViewingPlayer(startingPlayer);
     if (saved) {
       setDailyDate(today); setDailyThrowIndex(saved.dailyThrowIndex ?? 0); setProgressRecorded(Boolean(saved.progressRecorded)); setYahtzeeOnFinalRoll(Boolean(saved.yahtzeeOnFinalRoll));
       setCurrentPlayer(1); setViewingPlayer(1); setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories({ 1: saved.histories[1] ?? [], 2: [] }); setSubmitted(Boolean(saved.submitted)); setQueued(Boolean(saved.queued));
