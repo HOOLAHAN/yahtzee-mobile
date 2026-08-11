@@ -10,7 +10,7 @@ const playModes: { title: string; description: string; icon: keyof typeof Ionico
   { title: 'Solo', description: 'Play a complete 13-round game, save your score and climb the leaderboard.', icon: 'person-outline', color: playerProfiles[0].accent },
   { title: 'Vs Computer', description: 'Battle an opponent that visibly rolls, holds combinations and makes strategic category choices.', icon: 'hardware-chip-outline', color: playerProfiles[1].accent },
   { title: 'Pass & Play', description: 'Share one device for a local two-player game with separate turns and scorecards.', icon: 'people-outline', color: playerProfiles[2].accent },
-  { title: 'Real Dice', description: 'Use physical dice while the app tracks turns and scorecards for up to six named players.', icon: 'calculator-outline', color: playerProfiles[3].accent },
+  { title: 'Real Dice', description: 'Use physical dice while the app tracks turns and scorecards for up to ten named players.', icon: 'calculator-outline', color: playerProfiles[3].accent },
 ];
 
 const rules = [
