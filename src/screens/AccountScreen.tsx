@@ -13,6 +13,7 @@ interface AccountScreenProps {
   remindersEnabled?: boolean;
   reminderHour?: number;
   onRemindersChange?: (enabled: boolean) => void;
+  onRequestReminders?: () => Promise<boolean>;
   onReminderHourChange?: (hour: number) => void;
 }
 
@@ -34,7 +35,7 @@ const friendlyAuthError = (caught: unknown) => {
   return caught.message || 'Something went wrong. Please try again.';
 };
 
-export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestionsChange, remindersEnabled = false, reminderHour = 19, onRemindersChange, onReminderHourChange }: AccountScreenProps) {
+export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestionsChange, remindersEnabled = false, reminderHour = 19, onRemindersChange, onRequestReminders, onReminderHourChange }: AccountScreenProps) {
   const auth = useAuth();
   const scrollRef = useRef<ScrollView>(null);
   const [mode, setMode] = useState<Mode>('login');
@@ -52,6 +53,7 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileError, setProfileError] = useState('');
+  const [registrationReminderOptIn, setRegistrationReminderOptIn] = useState(true);
 
   useEffect(() => { if (auth.user) { setUsername(auth.user.username); setFirstName(auth.user.firstName ?? ''); setLastName(auth.user.lastName ?? ''); } }, [auth.user]);
   useEffect(() => { if (!auth.user) return; void getMyProfile().then((profile) => { onScoreSuggestionsChange?.(profile.scoreSuggestionsEnabled); onRemindersChange?.(profile.dailyReminderEnabled); onReminderHourChange?.(profile.dailyReminderHour); }).catch(() => undefined); }, [auth.user]);
@@ -205,6 +207,13 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
       if (mode === 'confirm') {
         await auth.confirmRegistration(email, code);
         if (password) await auth.login(email, password);
+        if (password && registrationReminderOptIn) {
+          const granted = remindersEnabled || await onRequestReminders?.() || false;
+          if (granted) {
+            await updateMyPreferences(scoreSuggestionsEnabled, true, 19).catch(() => undefined);
+            onRemindersChange?.(true);
+          }
+        }
         Alert.alert('You’re all set', password ? 'Your email is verified and your Yahtzee Hub account is ready.' : 'Your email is verified. You can now sign in.');
         setCode(''); setPassword('');
         if (!password) setMode('login');
@@ -228,6 +237,7 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
     {(mode === 'confirm' || mode === 'confirmReset') && <><Text style={styles.authLabel}>Six-digit code</Text><TextInput value={code} onChangeText={(value) => setCode(cleanCode(value))} placeholder="000000" placeholderTextColor={colors.muted} style={[styles.input, styles.codeInput]} keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code" maxLength={6} /></>}
     {(mode === 'login' || mode === 'register' || mode === 'confirmReset') && <><Text style={styles.authLabel}>{mode === 'confirmReset' ? 'New password' : 'Password'}</Text><View style={styles.passwordRow}><TextInput value={password} onChangeText={(value) => { setPassword(value); setError(''); }} placeholder={mode === 'login' ? 'Enter your password' : 'At least 8 characters'} placeholderTextColor={colors.muted} style={styles.passwordInput} secureTextEntry={!showPassword} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} /><Pressable accessibilityLabel={showPassword ? 'Hide password' : 'Show password'} onPress={() => setShowPassword((value) => !value)} style={styles.eyeButton}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color={colors.cyan} /></Pressable></View></>}
     {(mode === 'register' || mode === 'confirmReset') && <><Text style={styles.authLabel}>Confirm password</Text><TextInput value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Re-enter password" placeholderTextColor={colors.muted} style={styles.input} secureTextEntry={!showPassword} autoComplete="new-password" /><Text style={styles.passwordHint}>Use at least 8 characters.</Text></>}
+    {mode === 'register' && <View style={styles.signUpReminder}><View style={styles.signUpReminderCopy}><Text style={styles.signUpReminderTitle}>Daily reminder at 7:00 pm</Text><Text style={styles.signUpReminderText}>After email verification, your device will ask for notification permission.</Text></View><Switch accessibilityLabel="Enable a 7 pm Daily Challenge reminder after sign up" value={registrationReminderOptIn} onValueChange={setRegistrationReminderOptIn} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={registrationReminderOptIn ? colors.cyan : colors.muted} /></View>}
     {error ? <Text style={styles.error}>{error}</Text> : null}
     <Pressable disabled={busy} onPress={() => void submit()} style={styles.button}><Text style={styles.buttonText}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : mode === 'requestReset' ? 'Send Reset Code' : mode === 'confirmReset' ? 'Reset Password' : 'Verify Email'}</Text></Pressable>
     {mode === 'confirm' && <Pressable disabled={busy || resendSeconds > 0} onPress={() => void auth.resendRegistrationCode(email).then(() => { setResendSeconds(30); Alert.alert('New code sent', `Check ${maskedEmail(email)}.`); }).catch((caught) => setError(friendlyAuthError(caught)))}><Text style={[styles.link, resendSeconds > 0 && styles.disabledLink]}>{resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : 'Resend verification code'}</Text></Pressable>}
@@ -242,6 +252,7 @@ const styles = StyleSheet.create({
   content: { flexGrow: 1, padding: 20, paddingBottom: 150 }, loader: { flex: 1 }, formIntro: { marginBottom: 20 }, formTitle: { color: colors.yellow, fontSize: 24, fontWeight: '900' }, formSubtitle: { color: colors.mint, fontSize: 12, lineHeight: 18, marginTop: 4 },
   input: { backgroundColor: colors.surface, color: colors.white, borderColor: colors.cyan, borderWidth: 1, borderRadius: 12, padding: 15, marginBottom: 12, fontSize: 16, letterSpacing: 0 }, authLabel: { color: colors.mint, fontSize: 12, fontWeight: '900', marginBottom: 6 }, privateLabel: { color: colors.muted, fontSize: 8 }, passwordRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.cyan, borderWidth: 1, borderRadius: 12, marginBottom: 12 }, passwordInput: { flex: 1, color: colors.white, padding: 15, fontSize: 16, letterSpacing: 0 }, eyeButton: { width: 50, minHeight: 50, alignItems: 'center', justifyContent: 'center' }, codeInput: { textAlign: 'center', letterSpacing: 10, fontSize: 22, fontWeight: '900' }, passwordHint: { color: colors.muted, fontSize: 11, marginTop: -5, marginBottom: 12 }, button: { backgroundColor: colors.cyan, padding: 15, borderRadius: 14, alignItems: 'center', marginTop: 6 }, buttonText: { color: colors.background, fontWeight: '900', fontSize: 16 }, error: { color: colors.danger, marginBottom: 8 }, link: { color: colors.pink, textAlign: 'center', marginTop: 18, fontWeight: '700' }, disabledLink: { color: colors.muted },
   profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 18, padding: 18, marginBottom: 2 },
+  signUpReminder: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 12, padding: 13, marginBottom: 10 }, signUpReminderCopy: { flex: 1 }, signUpReminderTitle: { color: colors.white, fontWeight: '900', fontSize: 13 }, signUpReminderText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
   preferenceRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 13, padding: 12 },
   notificationCard: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 13, padding: 12 }, preferenceRowInner: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10 }, timeControl: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, paddingHorizontal: 12, borderTopColor: '#2d3c40', borderTopWidth: 1 }, timeButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderColor: '#315a5e', borderWidth: 1, backgroundColor: colors.background }, timeValue: { color: colors.yellow, fontSize: 17, fontWeight: '900', textAlign: 'center' }, timeLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 1, textAlign: 'center', marginTop: 2 },
   avatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#20383b', borderColor: colors.cyan, borderWidth: 1, alignItems: 'center', justifyContent: 'center' }, avatarText: { color: colors.cyan, fontSize: 25, fontWeight: '900' },

@@ -72,12 +72,12 @@ export default function App() {
   }, []);
   const changeScoreSuggestions = (enabled: boolean) => { setScoreSuggestionsEnabled(enabled); void AsyncStorage.setItem(scoreSuggestionsKey, String(enabled)); };
   const finishOnboarding = () => { setShowOnboarding(false); void AsyncStorage.setItem(onboardingKey, 'true'); };
-  const startDaily = () => { finishOnboarding(); setTab('game'); setDailyLaunchRequest((value) => value + 1); };
   const changeReminders = async (enabled: boolean) => {
-    if (!enabled) { await disableDailyReminders(); setRemindersEnabled(false); return; }
+    if (!enabled) { await disableDailyReminders(); setRemindersEnabled(false); return false; }
     const granted = await enableDailyReminders(reminderHour);
     setRemindersEnabled(granted);
     if (!granted) Alert.alert('Notifications are off', 'Enable notifications for Yahtzee Hub in your device settings to receive Daily Challenge reminders.');
+    return granted;
   };
   const changeReminderHour = async (hour: number) => { setReminderHour(hour); await updateReminderHour(hour); };
   const handleDailyCompleted = useCallback(() => { void dailyChallengeCompleted(); }, []);
@@ -93,7 +93,7 @@ export default function App() {
           <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenAccount={() => setTab('account')} /></View>
           {tab === 'leaderboard' && <LeaderboardScreen />}
           {tab === 'progress' && <ProgressScreen />}
-          {tab === 'account' && <AccountScreen scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} remindersEnabled={remindersEnabled} reminderHour={reminderHour} onRemindersChange={(enabled) => void changeReminders(enabled)} onReminderHourChange={(hour) => void changeReminderHour(hour)} />}
+          {tab === 'account' && <AccountScreen scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} remindersEnabled={remindersEnabled} reminderHour={reminderHour} onRemindersChange={(enabled) => void changeReminders(enabled)} onRequestReminders={() => changeReminders(true)} onReminderHourChange={(hour) => void changeReminderHour(hour)} />}
           {tab === 'about' && <AboutScreen />}
         </View>
         <View style={styles.tabBar}>
@@ -104,7 +104,7 @@ export default function App() {
             </Pressable>
           ))}
         </View>
-        <Onboarding visible={showOnboarding} onFinish={finishOnboarding} onStartDaily={startDaily} />
+        <Onboarding visible={showOnboarding} onFinish={finishOnboarding} onEnableReminders={() => changeReminders(true)} />
       </SafeAreaView>
     </AuthProvider>
     </SafeAreaProvider>
