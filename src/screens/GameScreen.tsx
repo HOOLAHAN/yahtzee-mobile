@@ -297,6 +297,10 @@ export function GameScreen({ chooserRequest = 0, dailyLaunchRequest = 0, onHeade
 
   useEffect(() => {
     if (!dailyMode || !complete) return;
+    // Lock the challenge in memory immediately. Persisting the completion and
+    // saving the result are asynchronous, so the UI must not expose a reset
+    // path while either operation is still in flight.
+    setDailyAlreadyCompleted(true);
     void AsyncStorage.setItem(`yahtzee.daily.completed.${dailyDate}.${user?.userId ?? 'guest'}`, 'true').then(() => onDailyCompleted?.());
   }, [complete, dailyDate, dailyMode, onDailyCompleted, user?.userId]);
 
@@ -678,7 +682,7 @@ export function GameScreen({ chooserRequest = 0, dailyLaunchRequest = 0, onHeade
         {dailyMode && !remindersEnabled && <View style={styles.postGamePrompt}><Ionicons name="notifications-outline" size={22} color={colors.yellow} /><View style={styles.postGameCopy}><Text style={styles.postGameTitle}>Come back tomorrow</Text><Text style={styles.postGameText}>Get a reminder when the next Daily Challenge is waiting.</Text></View><Pressable onPress={onRequestReminders} style={styles.postGameButton}><Text style={styles.postGameButtonText}>Remind me</Text></Pressable></View>}
         {(!twoPlayer || computerOpponent) && <Pressable disabled={submitting || submitted || queued} onPress={() => void sendScore()} style={[styles.primaryButton, (submitted || queued) && styles.disabled]}><Text style={styles.primaryText}>{submitted ? 'Submitted' : queued ? 'Queued for Upload' : submitting ? 'Submitting…' : 'Submit Your Score'}</Text></Pressable>}
         {queued && <Text style={styles.queueHint}>Safe on this device. It will submit when this account is online.</Text>}
-        <View style={styles.completeActions}><Pressable onPress={() => void shareScorecard()} style={styles.secondaryButton}><Ionicons name="share-outline" size={19} color={colors.cyan} /><Text style={styles.secondaryText}>Share</Text></Pressable><Pressable onPress={clearGame} style={styles.newGameButton}><Ionicons name="refresh" size={19} color={colors.background} /><Text style={styles.newGameText}>New Game</Text></Pressable></View>
+        <View style={styles.completeActions}><Pressable onPress={() => void shareScorecard()} style={styles.secondaryButton}><Ionicons name="share-outline" size={19} color={colors.cyan} /><Text style={styles.secondaryText}>Share</Text></Pressable><Pressable onPress={dailyMode ? () => setShowModeChooser(true) : clearGame} style={styles.newGameButton}><Ionicons name={dailyMode ? 'grid-outline' : 'refresh'} size={19} color={colors.background} /><Text style={styles.newGameText}>{dailyMode ? 'Other Games' : 'New Game'}</Text></Pressable></View>
       </View> : <>
         <View style={styles.sectionHeadingRow}><View><Text style={[styles.sectionTitle, { color: currentProfile.accent }]}>{isComputerTurn ? 'Computer strategy' : 'Choose a category'}</Text><Text style={styles.sectionSubtitle}>{isComputerTurn ? 'Watch the computer roll, hold and choose.' : hasRolled ? 'Tap once to preview, then lock it in.' : 'Categories unlock after your first roll.'}</Text></View>{recommendedCategory && !isComputerTurn && <View style={styles.recommendedLegend}><Ionicons name="sparkles" size={14} color={dailyMode ? colors.pink : colors.yellow} /><Text style={[styles.recommendedLegendText, dailyMode && { color: colors.pink }]}>Best</Text></View>}</View>
         <View style={styles.categoryGrid}>{categories.map((category) => {
