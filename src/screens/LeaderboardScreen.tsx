@@ -18,7 +18,7 @@ function ScorecardBreakdown({ value }: { value?: string }) {
   return <View style={styles.scorecard}><View style={styles.scorecardHeading}><Text style={styles.scorecardTitle}>Full scorecard</Text><Text style={styles.scorecardTotal}>Upper {upper} · Bonus {bonus}</Text></View><ScrollView style={styles.scorecardScroll} nestedScrollEnabled>{Object.entries(card).map(([category, score]) => <View key={category} style={styles.scorecardRow}><Text style={styles.scorecardLabel}>{scoreLabels[category] ?? category}</Text><Text style={[styles.scorecardValue, score === 0 && styles.zeroScore]}>{score}</Text></View>)}</ScrollView></View>;
 }
 
-export function LeaderboardScreen() {
+export function LeaderboardScreen({ onOpenAccount }: { onOpenAccount?: () => void }) {
   const { user } = useAuth();
   const [scores, setScores] = useState<LeaderboardEntry[]>([]);
   const [mine, setMine] = useState(false);
@@ -67,7 +67,7 @@ export function LeaderboardScreen() {
         {competition === 'daily' && <View style={styles.periodRow}>{(['today', 'week', 'all'] as Period[]).map((item) => <Pressable key={item} onPress={() => { setLoading(true); setPeriod(item); }} style={[styles.period, period === item && styles.periodActive]}><Text style={[styles.periodText, period === item && styles.periodTextActive]}>{item === 'today' ? 'Today' : item === 'week' ? 'Week' : 'All time'}</Text></Pressable>)}</View>}
         <View style={styles.viewRow}><Text style={styles.viewLabel}>SHOWING</Text><View style={styles.filterRow}>
           <Pressable onPress={() => setMine(false)} style={[styles.filter, !mine && styles.filterActive]}><Ionicons name="earth-outline" size={13} color={!mine ? colors.cyan : colors.muted} /><Text style={[styles.filterText, !mine && styles.filterTextActive]}>Global</Text></Pressable>
-          <Pressable disabled={!user} onPress={() => setMine(true)} style={[styles.filter, mine && styles.filterActive, !user && styles.filterDisabled]}><Ionicons name="person-circle-outline" size={14} color={mine ? colors.cyan : colors.muted} /><Text style={[styles.filterText, mine && styles.filterTextActive]}>Mine</Text></Pressable>
+          <Pressable onPress={user ? () => setMine(true) : onOpenAccount} style={[styles.filter, mine && styles.filterActive]}><Ionicons name="person-circle-outline" size={14} color={mine ? colors.cyan : colors.muted} /><Text style={[styles.filterText, mine && styles.filterTextActive]}>{user ? 'Mine' : 'Join'}</Text></Pressable>
         </View></View>
       </View>
       <View style={styles.freshness}><Text style={styles.freshnessText}>{loading ? 'Updating…' : lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Pull down to refresh'}</Text><Pressable disabled={loading} onPress={() => void load()} style={styles.refreshButton}><Ionicons name="refresh" size={13} color={colors.cyan} /><Text style={styles.refreshText}>Refresh</Text></Pressable></View>

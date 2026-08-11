@@ -55,6 +55,7 @@ export default function App() {
   const [dailyLaunchRequest, setDailyLaunchRequest] = useState(0);
   const [remindersEnabled, setRemindersEnabled] = useState(false);
   const [reminderHour, setReminderHour] = useState(19);
+  const [accountRegistrationRequest, setAccountRegistrationRequest] = useState(0);
   const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'leaderboard' ? 'High Scores' : tab === 'progress' ? 'Progress' : tab === 'account' ? 'Account' : 'About';
 
   useEffect(() => {
@@ -81,6 +82,7 @@ export default function App() {
   };
   const changeReminderHour = async (hour: number) => { setReminderHour(hour); await updateReminderHour(hour); };
   const handleDailyCompleted = useCallback(() => { void dailyChallengeCompleted(); }, []);
+  const openAccount = (createAccount = false) => { if (createAccount) setAccountRegistrationRequest((value) => value + 1); setTab('account'); };
 
   return (
     <SafeAreaProvider>
@@ -90,10 +92,10 @@ export default function App() {
         <StatusBar style="light" />
         <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text numberOfLines={1} style={styles.logo}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
         <View style={styles.screen}>
-          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenAccount={() => setTab('account')} /></View>
-          {tab === 'leaderboard' && <LeaderboardScreen />}
-          {tab === 'progress' && <ProgressScreen />}
-          {tab === 'account' && <AccountScreen scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} remindersEnabled={remindersEnabled} reminderHour={reminderHour} onRemindersChange={(enabled) => void changeReminders(enabled)} onRequestReminders={() => changeReminders(true)} onReminderHourChange={(hour) => void changeReminderHour(hour)} />}
+          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenAccount={openAccount} /></View>
+          {tab === 'leaderboard' && <LeaderboardScreen onOpenAccount={() => openAccount(true)} />}
+          {tab === 'progress' && <ProgressScreen onCreateAccount={() => openAccount(true)} />}
+          {tab === 'account' && <AccountScreen registrationRequest={accountRegistrationRequest} scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} remindersEnabled={remindersEnabled} reminderHour={reminderHour} onRemindersChange={(enabled) => void changeReminders(enabled)} onRequestReminders={() => changeReminders(true)} onReminderHourChange={(hour) => void changeReminderHour(hour)} />}
           {tab === 'about' && <AboutScreen />}
         </View>
         <View style={styles.tabBar}>
