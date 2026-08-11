@@ -58,7 +58,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!result.isSignedIn) return result.nextStep.signInStep;
       const attributes = await fetchUserAttributes();
       if (attributes.preferred_username && attributes.given_name && attributes.family_name) {
-        await updateMyProfile(attributes.preferred_username, attributes.given_name, attributes.family_name);
+        try {
+          await updateMyProfile(attributes.preferred_username, attributes.given_name, attributes.family_name);
+        } catch {
+          // Cognito sign-in succeeded, but another account may have claimed the
+          // requested public username while this account awaited verification.
+          await refresh();
+          return 'PROFILE_REQUIRED';
+        }
         await fetchAuthSession({ forceRefresh: true });
       }
       await refresh();

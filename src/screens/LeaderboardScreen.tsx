@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { fetchLeaderboard, fetchUserScores, LeaderboardScore } from '../services/scores';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
-import { fetchAllDailyResults, fetchDailyResults, fetchSoloResults, fetchWeeklyResults, GameResult } from '../services/gameResults';
+import { fetchAllDailyResults, fetchDailyResults, fetchMyGameResults, fetchSoloResults, fetchWeeklyResults, GameResult } from '../services/gameResults';
 import { localDateKey } from '../lib/dailyChallenge';
 
 type Period = 'today' | 'week' | 'all';
@@ -27,25 +27,36 @@ export function LeaderboardScreen() {
   const [selected, setSelected] = useState<LeaderboardEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const load = useCallback(async () => {
+    setLoading(true);
     setError('');
     try {
       if (competition === 'solo') {
-        const [legacy, details] = await Promise.all([mine && user ? fetchUserScores(user.userId) : fetchLeaderboard(), fetchSoloResults()]);
-        const detailById = new Map(details.map((result) => [result.id, result]));
-        setScores(legacy.map((score) => ({ ...score, ...detailById.get(score.id) })) as LeaderboardEntry[]);
+        const [legacy, details] = await Promise.all([
+          mine && user ? fetchUserScores(user.userId) : fetchLeaderboard(),
+          mine && user ? fetchMyGameResults(user.userId) : fetchSoloResults(100),
+        ]);
+        const indexed = details.filter((result) => result.mode === 'SOLO').map((result) => ({ ...result, timestamp: result.completedAt } as LeaderboardEntry));
+        const indexedIds = new Set(indexed.map((result) => result.id));
+        setScores([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))].sort((a, b) => b.score - a.score).slice(0, 100));
       } else {
         const daily = period === 'today' ? await fetchDailyResults(localDateKey()) : period === 'week' ? (await fetchWeeklyResults()).map((entry) => ({ ...entry, aggregate: true })) : await fetchAllDailyResults();
         const visible = mine && user ? daily.filter((score) => score.userId === user.userId) : daily;
         setScores(visible.slice(0, 100) as LeaderboardEntry[]);
       }
+      setLastUpdated(new Date());
     }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to load scores.'); }
     finally { setLoading(false); }
   }, [competition, mine, period, user]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') void load(); });
+    return () => subscription.remove();
+  }, [load]);
 
   return (
     <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { setLoading(true); void load(); }} tintColor={colors.cyan} />}>
@@ -59,6 +70,7 @@ export function LeaderboardScreen() {
           <Pressable disabled={!user} onPress={() => setMine(true)} style={[styles.filter, mine && styles.filterActive, !user && styles.filterDisabled]}><Ionicons name="person-circle-outline" size={14} color={mine ? colors.cyan : colors.muted} /><Text style={[styles.filterText, mine && styles.filterTextActive]}>Mine</Text></Pressable>
         </View></View>
       </View>
+      <View style={styles.freshness}><Text style={styles.freshnessText}>{loading ? 'Updating…' : lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Pull down to refresh'}</Text><Pressable disabled={loading} onPress={() => void load()} style={styles.refreshButton}><Ionicons name="refresh" size={13} color={colors.cyan} /><Text style={styles.refreshText}>Refresh</Text></Pressable></View>
       {loading && scores.length === 0 && <ActivityIndicator color={colors.cyan} size="large" />}
       {error ? <View style={styles.message}><Text style={styles.error}>{error}</Text><Pressable onPress={() => { setLoading(true); void load(); }}><Text style={styles.retry}>Try again</Text></Pressable></View> : null}
       {scores.map((item, index) => (
@@ -82,6 +94,7 @@ const styles = StyleSheet.create({
   viewRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 8 }, viewLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 1.1 }, filterRow: { flexDirection: 'row', gap: 3, backgroundColor: colors.background, padding: 3, borderRadius: 18 },
   filter: { minWidth: 82, minHeight: 30, paddingHorizontal: 10, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', borderRadius: 15 }, filterActive: { backgroundColor: '#20383b' }, filterDisabled: { opacity: 0.4 },
   filterText: { color: colors.muted, fontSize: 10, fontWeight: '800' }, filterTextActive: { color: colors.cyan },
+  freshness: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 10, marginTop: -8, marginBottom: 12 }, freshnessText: { color: colors.muted, fontSize: 9 }, refreshButton: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 }, refreshText: { color: colors.cyan, fontSize: 9, fontWeight: '800' },
   row: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.cyan, borderWidth: 1, padding: 14, borderRadius: 12, marginBottom: 10 }, rowPressed: { opacity: .75 },
   rank: { color: colors.pink, fontSize: 20, fontWeight: '900', width: 38 },
   player: { flex: 1 }, name: { color: colors.mint, fontSize: 16, fontWeight: '700' }, rowMeta: { color: colors.muted, fontSize: 9, fontWeight: '800', marginTop: 2 },

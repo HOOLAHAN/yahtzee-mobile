@@ -189,6 +189,9 @@ export function AccountScreen({ scoreSuggestionsEnabled = true, onScoreSuggestio
         const step = await auth.login(email, password);
         if (step === 'CONFIRM_SIGN_UP') {
           setCode(''); setResendSeconds(0); setMode('confirm');
+        } else if (step === 'PROFILE_REQUIRED') {
+          setEditingProfile(true);
+          setProfileError('Your account is verified, but that public username is no longer available. Choose another username to finish your profile.');
         }
       }
       if (mode === 'register') {

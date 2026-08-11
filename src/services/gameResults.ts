@@ -79,11 +79,11 @@ export async function fetchSoloResults(limit = 500) {
 
 export async function fetchAllDailyResults(limit = 500) {
   const result = await graphqlWithDevLog(client, {
-    query: `query AllDailyResults($limit:Int){listGameResults(filter:{mode:{eq:DAILY}},limit:$limit){items{${fields}}}}`,
-    authMode: 'apiKey', variables: { limit },
+    query: `query AllDailyResults($mode:GameMode!,$limit:Int){gameResultsByMode(mode:$mode,sortDirection:DESC,limit:$limit){items{${fields}}}}`,
+    authMode: 'apiKey', variables: { mode: 'DAILY', limit },
   });
   if (!('data' in result)) throw new Error('Unable to load Daily Challenge results.');
-  return (result.data.listGameResults.items.filter(Boolean) as GameResult[]).sort((a, b) => b.score - a.score);
+  return result.data.gameResultsByMode.items.filter(Boolean) as GameResult[];
 }
 
 export interface PeriodLeaderboardEntry {
