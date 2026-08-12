@@ -1,6 +1,6 @@
 {
   "name": "yahtzee-mobile",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "main": "index.ts",
   "dependencies": {
     "@aws-amplify/react-native": "^1.3.3",
