@@ -733,7 +733,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
 
     {selectedCategory && !complete && !isComputerTurn && <View style={[styles.lockBar, { borderColor: currentProfile.accent, shadowColor: currentProfile.accent }]}><View><Text style={styles.lockLabel}>{selectedCategory}</Text><Text style={[styles.lockScore, { color: currentProfile.score }]}>{scoreCategory(selectedCategory, dice)} points</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Lock in ${selectedCategory} for ${scoreCategory(selectedCategory, dice)} points`} onPress={lockScore} style={[styles.lockButton, { backgroundColor: currentProfile.accent }]}><Ionicons name="lock-closed" size={18} color={colors.background} /><Text style={styles.lockButtonText}>Lock In</Text></Pressable></View>}
 
-    <Modal transparent animationType="slide" visible={showScorecard} onShow={() => scorecardY.setValue(0)} onDismiss={() => scorecardY.setValue(0)} onRequestClose={closeScorecard}>
+    <Modal transparent animationType="none" visible={showScorecard} onShow={() => scorecardY.setValue(0)} onDismiss={() => scorecardY.setValue(0)} onRequestClose={closeScorecard}>
       <View style={styles.sheetBackdrop}><Pressable accessibilityLabel="Close scorecard" style={styles.sheetDismissArea} onPress={closeScorecard} /><Animated.View style={[styles.sheet, { transform: [{ translateY: scorecardY }] }]}>
         <SafeAreaView style={styles.sheetSafeArea}>
         <View collapsable={false} {...scorecardPanResponder.panHandlers} style={styles.sheetGrabber} accessibilityRole="adjustable" accessibilityLabel="Drag down to close scorecard"><View style={styles.sheetHandle} /></View>
