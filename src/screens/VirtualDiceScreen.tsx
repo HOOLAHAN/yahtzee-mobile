@@ -4,27 +4,35 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { DieFace, rollDie } from '../lib/game';
 import { colors } from '../theme';
+import { defaultDiceAnimation, DiceAnimation } from '../lib/diceAnimation';
 
 const pipCells: Record<DieFace, number[]> = {
   1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8],
 };
 
-function VirtualDie({ value, index, rollToken, reduceMotion }: { value: DieFace; index: number; rollToken: number; reduceMotion: boolean }) {
+function VirtualDie({ value, index, rollToken, reduceMotion, animation }: { value: DieFace; index: number; rollToken: number; reduceMotion: boolean; animation: DiceAnimation }) {
   const spin = useRef(new Animated.Value(0)).current;
   const lift = useRef(new Animated.Value(0)).current;
+  const scale = useRef(new Animated.Value(1)).current;
+  const sway = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (!rollToken || reduceMotion) return;
-    spin.setValue(0); lift.setValue(0);
-    Animated.parallel([
+    spin.setValue(0); lift.setValue(0); scale.setValue(animation === 'classic' ? 1 : animation === 'quickFlip' ? .82 : 1); sway.setValue(0);
+    const classic = Animated.parallel([
       Animated.timing(spin, { toValue: 1, duration: 560 + index * 35, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
       Animated.sequence([Animated.timing(lift, { toValue: -18 - (index % 3) * 4, duration: 190, useNativeDriver: true }), Animated.spring(lift, { toValue: 0, speed: 17, bounciness: 10, useNativeDriver: true })]),
-    ]).start();
-  }, [index, lift, reduceMotion, rollToken, spin]);
+    ]);
+    const bounceSpin = Animated.parallel([Animated.timing(spin, { toValue: 1, duration: 820 + index * 35, easing: Easing.out(Easing.cubic), useNativeDriver: true }), Animated.sequence([Animated.timing(lift, { toValue: -46, duration: 250, useNativeDriver: true }), Animated.spring(lift, { toValue: 0, speed: 13, bounciness: 18, useNativeDriver: true })]), Animated.sequence([Animated.timing(scale, { toValue: 1.12, duration: 250, useNativeDriver: true }), Animated.spring(scale, { toValue: 1, speed: 14, bounciness: 16, useNativeDriver: true })])]);
+    const shake = Animated.sequence([-1, 1, -.85, .85, -.55, .55, 0].map((position) => Animated.timing(sway, { toValue: position, duration: 55, useNativeDriver: true })));
+    const quickFlip = Animated.parallel([Animated.timing(spin, { toValue: 1, duration: 320, easing: Easing.out(Easing.back(1.4)), useNativeDriver: true }), Animated.spring(scale, { toValue: 1, speed: 24, bounciness: 8, useNativeDriver: true })]);
+    (animation === 'bounceSpin' ? bounceSpin : animation === 'shake' ? shake : animation === 'quickFlip' ? quickFlip : classic).start();
+  }, [animation, index, lift, reduceMotion, rollToken, scale, spin, sway]);
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', index % 2 ? '-720deg' : '720deg'] });
-  return <Animated.View accessibilityLabel={`Die ${index + 1}, ${value}`} style={[styles.die, { transform: [{ translateY: lift }, { rotate }] }]}><View style={styles.pipGrid}>{Array.from({ length: 9 }, (_, cell) => <View key={cell} style={styles.pipCell}>{pipCells[value].includes(cell) && <View style={styles.pip} />}</View>)}</View></Animated.View>;
+  const translateX = sway.interpolate({ inputRange: [-1, 1], outputRange: [-12, 12] });
+  return <Animated.View accessibilityLabel={`Die ${index + 1}, ${value}`} style={[styles.die, { transform: [{ translateX }, { translateY: lift }, { rotate }, { scale }] }]}><View style={styles.pipGrid}>{Array.from({ length: 9 }, (_, cell) => <View key={cell} style={styles.pipCell}>{pipCells[value].includes(cell) && <View style={styles.pip} />}</View>)}</View></Animated.View>;
 }
 
-export function VirtualDiceScreen({ onOpenSettings }: { onOpenSettings?: () => void }) {
+export function VirtualDiceScreen({ onOpenSettings, diceAnimation = defaultDiceAnimation }: { onOpenSettings?: () => void; diceAnimation?: DiceAnimation }) {
   const [dice, setDice] = useState<DieFace[]>([1]);
   const [rollToken, setRollToken] = useState(0);
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -44,7 +52,7 @@ export function VirtualDiceScreen({ onOpenSettings }: { onOpenSettings?: () => v
   return <ScrollView contentContainerStyle={styles.container}>
     <View style={styles.icon}><Ionicons name="dice-outline" size={32} color={colors.cyan} /></View><Text style={styles.title}>Virtual Dice</Text><Text style={styles.subtitle}>Choose how many dice you need, then roll them for any tabletop game.</Text>
     <View style={styles.counter} accessibilityLabel={`${dice.length} ${dice.length === 1 ? 'die' : 'dice'}`}><Pressable accessibilityRole="button" accessibilityLabel="Remove a die" disabled={dice.length === 1} onPress={() => changeCount(-1)} style={[styles.countButton, dice.length === 1 && styles.disabled]}><Ionicons name="remove" size={25} color={colors.cyan} /></Pressable><View><Text style={styles.count}>{dice.length}</Text><Text style={styles.countLabel}>{dice.length === 1 ? 'die' : 'dice'}</Text></View><Pressable accessibilityRole="button" accessibilityLabel="Add a die" disabled={dice.length === 2} onPress={() => changeCount(1)} style={[styles.countButton, dice.length === 2 && styles.disabled]}><Ionicons name="add" size={25} color={colors.cyan} /></Pressable></View>
-    <View style={styles.tray}>{dice.map((value, index) => <VirtualDie key={index} value={value} index={index} rollToken={rollToken} reduceMotion={reduceMotion} />)}</View>
+    <View style={styles.tray}>{dice.map((value, index) => <VirtualDie key={index} value={value} index={index} rollToken={rollToken} reduceMotion={reduceMotion} animation={diceAnimation} />)}</View>
     <Pressable accessibilityRole="button" accessibilityLabel={`Roll ${dice.length === 1 ? 'die' : `${dice.length} dice`}`} onPress={roll} style={({ pressed }) => [styles.rollButton, pressed && styles.pressed]}><Ionicons name="dice" size={23} color={colors.background} /><Text style={styles.rollText}>Roll {dice.length === 1 ? 'Die' : `${dice.length} Dice`}</Text></Pressable>
     <Pressable accessibilityRole="button" accessibilityLabel="Open game settings" onPress={onOpenSettings} style={styles.settingsButton}><Ionicons name="settings-outline" size={18} color={colors.cyan} /><Text style={styles.settingsText}>Game Settings</Text></Pressable>
   </ScrollView>;

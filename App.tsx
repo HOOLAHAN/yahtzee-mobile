@@ -18,6 +18,7 @@ import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
 import { Onboarding } from './src/components/Onboarding';
 import { dailyChallengeCompleted, disableDailyReminders, enableDailyReminders, refreshDailyReminders, updateReminderHour } from './src/services/dailyReminders';
+import { defaultDiceAnimation, DiceAnimation, diceAnimationStorageKey } from './src/lib/diceAnimation';
 
 type Tab = 'game' | 'leaderboard' | 'progress' | 'account' | 'about';
 const scoreSuggestionsKey = 'yahtzee.score-suggestions.v1';
@@ -51,16 +52,21 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('game');
   const [gameHeaderTitle, setGameHeaderTitle] = useState('Yahtzee!');
   const [scoreSuggestionsEnabled, setScoreSuggestionsEnabled] = useState(true);
+  const [diceAnimation, setDiceAnimation] = useState<DiceAnimation>(defaultDiceAnimation);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dailyLaunchRequest, setDailyLaunchRequest] = useState(0);
   const [remindersEnabled, setRemindersEnabled] = useState(false);
   const [reminderHour, setReminderHour] = useState(19);
   const [accountRegistrationRequest, setAccountRegistrationRequest] = useState(0);
+  const [resumeGameRequest, setResumeGameRequest] = useState(0);
+  const [canContinueGame, setCanContinueGame] = useState(false);
+  const [gameSettingsOpen, setGameSettingsOpen] = useState(true);
   const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'leaderboard' ? 'High Scores' : tab === 'progress' ? 'Progress' : tab === 'account' ? 'Account' : 'About';
 
   useEffect(() => {
-    void Promise.all([AsyncStorage.getItem(scoreSuggestionsKey), AsyncStorage.getItem(onboardingKey), refreshDailyReminders()]).then(([suggestions, onboarding, reminders]) => {
+    void Promise.all([AsyncStorage.getItem(scoreSuggestionsKey), AsyncStorage.getItem(onboardingKey), AsyncStorage.getItem(diceAnimationStorageKey), refreshDailyReminders()]).then(([suggestions, onboarding, savedAnimation, reminders]) => {
       if (suggestions !== null) setScoreSuggestionsEnabled(suggestions !== 'false');
+      if (savedAnimation) setDiceAnimation(savedAnimation as DiceAnimation);
       setShowOnboarding(onboarding !== 'true');
       setRemindersEnabled(reminders.enabled); setReminderHour(reminders.hour);
     });
@@ -72,6 +78,7 @@ export default function App() {
     return () => subscription.remove();
   }, []);
   const changeScoreSuggestions = (enabled: boolean) => { setScoreSuggestionsEnabled(enabled); void AsyncStorage.setItem(scoreSuggestionsKey, String(enabled)); };
+  const changeDiceAnimation = (animation: DiceAnimation) => { setDiceAnimation(animation); void AsyncStorage.setItem(diceAnimationStorageKey, animation); };
   const finishOnboarding = () => { setShowOnboarding(false); void AsyncStorage.setItem(onboardingKey, 'true'); };
   const changeReminders = async (enabled: boolean) => {
     if (!enabled) { await disableDailyReminders(); setRemindersEnabled(false); return false; }
@@ -82,6 +89,7 @@ export default function App() {
   };
   const changeReminderHour = async (hour: number) => { setReminderHour(hour); await updateReminderHour(hour); };
   const handleDailyCompleted = useCallback(() => { void dailyChallengeCompleted(); }, []);
+  const handlePlayNavigationChange = useCallback((canContinue: boolean, settingsOpen: boolean) => { setCanContinueGame(canContinue); setGameSettingsOpen(settingsOpen); }, []);
   const openAccount = (createAccount = false) => { if (createAccount) setAccountRegistrationRequest((value) => value + 1); setTab('account'); };
 
   return (
@@ -92,7 +100,7 @@ export default function App() {
         <StatusBar style="light" />
         <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text numberOfLines={1} style={styles.logo}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
         <View style={styles.screen}>
-          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenAccount={openAccount} /></View>
+          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen resumeRequest={resumeGameRequest} onPlayNavigationChange={handlePlayNavigationChange} onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} diceAnimation={diceAnimation} onDiceAnimationChange={changeDiceAnimation} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenAccount={openAccount} /></View>
           {tab === 'leaderboard' && <LeaderboardScreen onOpenAccount={() => openAccount(true)} />}
           {tab === 'progress' && <ProgressScreen onCreateAccount={() => openAccount(true)} />}
           {tab === 'account' && <AccountScreen registrationRequest={accountRegistrationRequest} scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} remindersEnabled={remindersEnabled} reminderHour={reminderHour} onRemindersChange={(enabled) => void changeReminders(enabled)} onRequestReminders={() => changeReminders(true)} onReminderHourChange={(hour) => void changeReminderHour(hour)} />}
@@ -100,9 +108,9 @@ export default function App() {
         </View>
         <View style={styles.tabBar}>
           {tabs.map((item) => (
-            <Pressable key={item.key} onPress={() => { void Haptics.selectionAsync(); setTab(item.key); }} style={[styles.tab, tab === item.key && styles.activeTabPill]}>
+            <Pressable key={item.key} onPress={() => { void Haptics.selectionAsync(); if (item.key === 'game' && tab === 'game' && gameSettingsOpen && canContinueGame) setResumeGameRequest((value) => value + 1); setTab(item.key); }} style={[styles.tab, tab === item.key && styles.activeTabPill]}>
               <Ionicons name={tab === item.key ? item.activeIcon : item.icon} size={23} color={tab === item.key ? colors.cyan : colors.muted} />
-              <Text style={[styles.tabLabel, tab === item.key && styles.activeTab]}>{item.label}</Text>
+              <Text style={[styles.tabLabel, tab === item.key && styles.activeTab]}>{item.key === 'game' && canContinueGame ? 'Continue' : item.label}</Text>
             </Pressable>
           ))}
         </View>
