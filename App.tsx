@@ -110,7 +110,7 @@ export default function App() {
           {tabs.map((item) => (
             <Pressable key={item.key} onPress={() => { void Haptics.selectionAsync(); if (item.key === 'game' && tab === 'game' && gameSettingsOpen && canContinueGame) setResumeGameRequest((value) => value + 1); setTab(item.key); }} style={[styles.tab, tab === item.key && styles.activeTabPill]}>
               <Ionicons name={tab === item.key ? item.activeIcon : item.icon} size={23} color={tab === item.key ? colors.cyan : colors.muted} />
-              <Text style={[styles.tabLabel, tab === item.key && styles.activeTab]}>{item.key === 'game' && canContinueGame ? 'Continue' : item.label}</Text>
+              <Text style={[styles.tabLabel, tab === item.key && styles.activeTab]}>{item.key === 'game' && canContinueGame && (tab !== 'game' || gameSettingsOpen) ? 'Resume' : item.label}</Text>
             </Pressable>
           ))}
         </View>
