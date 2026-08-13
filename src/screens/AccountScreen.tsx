@@ -4,6 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
 import { getMyProfile, updateMyPreferences, updateMyProfile, usernameAvailable } from '../services/profiles';
+import { disableAppPushNotifications, enableAppPushNotifications } from '../services/pushNotifications';
 
 type Mode = 'login' | 'register' | 'confirm' | 'requestReset' | 'confirmReset';
 
@@ -55,10 +56,13 @@ export function AccountScreen({ registrationRequest = 0, scoreSuggestionsEnabled
   const [editingProfile, setEditingProfile] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [registrationReminderOptIn, setRegistrationReminderOptIn] = useState(true);
+  const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(false);
+  const [pushNotificationsBusy, setPushNotificationsBusy] = useState(false);
+  const [pushNotificationsError, setPushNotificationsError] = useState('');
 
   useEffect(() => { if (auth.user) { setUsername(auth.user.username); setFirstName(auth.user.firstName ?? ''); setLastName(auth.user.lastName ?? ''); } }, [auth.user]);
   useEffect(() => { if (registrationRequest > 0 && !auth.user) { setError(''); setMode('register'); } }, [auth.user, registrationRequest]);
-  useEffect(() => { if (!auth.user) return; void getMyProfile().then((profile) => { onScoreSuggestionsChange?.(profile.scoreSuggestionsEnabled); onRemindersChange?.(profile.dailyReminderEnabled); onReminderHourChange?.(profile.dailyReminderHour); }).catch(() => undefined); }, [auth.user]);
+  useEffect(() => { if (!auth.user) return; void getMyProfile().then((profile) => { onScoreSuggestionsChange?.(profile.scoreSuggestionsEnabled); onRemindersChange?.(profile.dailyReminderEnabled); onReminderHourChange?.(profile.dailyReminderHour); setPushNotificationsEnabled(profile.pushNotificationsEnabled); }).catch(() => undefined); }, [auth.user]);
   const savePreferences = (suggestions: boolean, reminders: boolean, hour: number) => { if (auth.user) void updateMyPreferences(suggestions, reminders, hour).catch(() => setManagementError('Your preference changed on this device, but could not be synced.')); };
   useEffect(() => { if (!resendSeconds) return; const timer = setInterval(() => setResendSeconds((value) => Math.max(0, value - 1)), 1000); return () => clearInterval(timer); }, [resendSeconds]);
 
@@ -133,7 +137,9 @@ export function AccountScreen({ registrationRequest = 0, scoreSuggestionsEnabled
     <View style={styles.preferenceRow}><View style={styles.actionIcon}><Ionicons name="sparkles-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Score suggestions</Text><Text style={styles.actionDescription}>Highlight the recommended category and show “Best now”</Text></View><Switch accessibilityLabel="Score suggestions" value={scoreSuggestionsEnabled} onValueChange={(value) => { onScoreSuggestionsChange?.(value); savePreferences(value, remindersEnabled, reminderHour); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={scoreSuggestionsEnabled ? colors.cyan : colors.muted} /></View>
 
     <Text style={styles.sectionTitle}>Notifications</Text>
-    <Text style={styles.sectionDescription}>Get one local reminder when the Daily Challenge is waiting. Completed days are skipped.</Text>
+    <Text style={styles.sectionDescription}>Choose app updates and your separate local Daily Challenge reminder.</Text>
+    <View style={[styles.preferenceRow, { marginBottom: 12 }]}><View style={styles.actionIcon}><Ionicons name="megaphone-outline" size={21} color={colors.pink} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>App notifications</Text><Text style={styles.actionDescription}>Daily top-three results and occasional Yahtzee Hub updates</Text></View>{pushNotificationsBusy ? <ActivityIndicator color={colors.cyan} /> : <Switch accessibilityLabel="App notifications" value={pushNotificationsEnabled} onValueChange={(value) => { setPushNotificationsBusy(true); setPushNotificationsError(''); void (value ? enableAppPushNotifications() : disableAppPushNotifications()).then(setPushNotificationsEnabled).catch((caught) => { setPushNotificationsEnabled(false); setPushNotificationsError(caught instanceof Error ? caught.message : 'Unable to change notification settings.'); }).finally(() => setPushNotificationsBusy(false)); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={pushNotificationsEnabled ? colors.cyan : colors.muted} />}</View>
+    {pushNotificationsError ? <Text style={[styles.error, { marginBottom: 12 }]}>{pushNotificationsError}</Text> : null}
     <View style={styles.notificationCard}><View style={styles.preferenceRowInner}><View style={styles.actionIcon}><Ionicons name="notifications-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Daily Challenge reminder</Text><Text style={styles.actionDescription}>{displayHour(reminderHour)} in your local timezone</Text></View><Switch accessibilityLabel="Daily Challenge reminder" value={remindersEnabled} onValueChange={(value) => { onRemindersChange?.(value); savePreferences(scoreSuggestionsEnabled, value, reminderHour); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={remindersEnabled ? colors.cyan : colors.muted} /></View>{remindersEnabled && <View style={styles.timeControl}><Pressable accessibilityLabel="Move reminder one hour earlier" onPress={() => { const hour = (reminderHour + 23) % 24; onReminderHourChange?.(hour); savePreferences(scoreSuggestionsEnabled, remindersEnabled, hour); }} style={styles.timeButton}><Ionicons name="remove" size={20} color={colors.cyan} /></Pressable><View><Text style={styles.timeValue}>{displayHour(reminderHour)}</Text><Text style={styles.timeLabel}>LOCAL TIME</Text></View><Pressable accessibilityLabel="Move reminder one hour later" onPress={() => { const hour = (reminderHour + 1) % 24; onReminderHourChange?.(hour); savePreferences(scoreSuggestionsEnabled, remindersEnabled, hour); }} style={styles.timeButton}><Ionicons name="add" size={20} color={colors.cyan} /></Pressable></View>}</View>
 
     <Text style={styles.sectionTitle}>Security & access</Text>

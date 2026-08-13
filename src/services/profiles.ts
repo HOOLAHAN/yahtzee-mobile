@@ -3,8 +3,8 @@ import { generateClient } from 'aws-amplify/api';
 import { graphqlWithDevLog } from '../lib/apiLogger';
 
 const client = generateClient();
-export interface UserProfile { userId: string; username: string; firstName: string; lastName: string; scoreSuggestionsEnabled: boolean; dailyReminderEnabled: boolean; dailyReminderHour: number }
-const fields = 'userId username firstName lastName scoreSuggestionsEnabled dailyReminderEnabled dailyReminderHour';
+export interface UserProfile { userId: string; username: string; firstName: string; lastName: string; scoreSuggestionsEnabled: boolean; dailyReminderEnabled: boolean; dailyReminderHour: number; pushNotificationsEnabled: boolean }
+const fields = 'userId username firstName lastName scoreSuggestionsEnabled dailyReminderEnabled dailyReminderHour pushNotificationsEnabled';
 
 export async function usernameAvailable(username: string) {
   const result = await graphqlWithDevLog(client, { query: `query Available($username:String!){usernameAvailable(username:$username)}`, authMode: 'apiKey', variables: { username } });
@@ -42,6 +42,12 @@ export async function updateMyPreferences(scoreSuggestionsEnabled: boolean, dail
   const query = `mutation Preferences($scoreSuggestionsEnabled:Boolean!,$dailyReminderEnabled:Boolean!,$dailyReminderHour:Int!){updateMyPreferences(scoreSuggestionsEnabled:$scoreSuggestionsEnabled,dailyReminderEnabled:$dailyReminderEnabled,dailyReminderHour:$dailyReminderHour){${fields}}}`;
   const result = await authenticatedGraphql(query, { scoreSuggestionsEnabled, dailyReminderEnabled, dailyReminderHour });
   return profileResult<UserProfile>(result, 'updateMyPreferences', 'Unable to save preferences. Please try again.');
+}
+
+export async function updateMyPushNotifications(enabled: boolean, expoPushToken?: string): Promise<UserProfile> {
+  const query = `mutation PushNotifications($enabled:Boolean!,$expoPushToken:String){updateMyPushNotifications(enabled:$enabled,expoPushToken:$expoPushToken){${fields}}}`;
+  const result = await authenticatedGraphql(query, { enabled, expoPushToken });
+  return profileResult<UserProfile>(result, 'updateMyPushNotifications', 'Unable to save notification settings. Please try again.');
 }
 
 export async function deleteMyProfile() { await authenticatedGraphql('mutation DeleteProfile { deleteMyProfile }'); }

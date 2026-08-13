@@ -70,9 +70,9 @@ export default function App() {
     });
   }, []);
   useEffect(() => {
-    const openDaily = () => { setTab('game'); setDailyLaunchRequest((value) => value + 1); };
-    void Notifications.getLastNotificationResponseAsync().then((response) => { if (response?.notification.request.content.data?.destination === 'daily') { openDaily(); void Notifications.clearLastNotificationResponseAsync(); } });
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => { if (response.notification.request.content.data?.destination === 'daily') openDaily(); });
+    const openNotification = (destination: unknown) => { if (destination === 'daily') { setTab('game'); setDailyLaunchRequest((value) => value + 1); } else if (destination === 'stats') setTab('stats'); };
+    void Notifications.getLastNotificationResponseAsync().then((response) => { if (response) { openNotification(response.notification.request.content.data?.destination); void Notifications.clearLastNotificationResponseAsync(); } });
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => openNotification(response.notification.request.content.data?.destination));
     return () => subscription.remove();
   }, []);
   const changeScoreSuggestions = (enabled: boolean) => { setScoreSuggestionsEnabled(enabled); void AsyncStorage.setItem(scoreSuggestionsKey, String(enabled)); };
