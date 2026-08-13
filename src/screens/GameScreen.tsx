@@ -112,6 +112,12 @@ function AnimatedDie({ value, index, held, rollToken, canHold, reduceMotion, res
   }, [lift, resetPosition, scale, spin, sway]);
 
   useEffect(() => {
+    if (!held) return;
+    spin.stopAnimation(); lift.stopAnimation(); scale.stopAnimation(); sway.stopAnimation();
+    spin.setValue(0); lift.setValue(0); scale.setValue(1); sway.setValue(0);
+  }, [held, lift, scale, spin, sway]);
+
+  useEffect(() => {
     if (rollToken === 0 || lastRollToken.current === rollToken) return;
     lastRollToken.current = rollToken;
     if (held || reduceMotion) return;
@@ -130,12 +136,15 @@ function AnimatedDie({ value, index, held, rollToken, canHold, reduceMotion, res
     const bounceSpin = Animated.parallel([Animated.timing(spin, { toValue: 1, duration: 820 + index * 35, easing: Easing.out(Easing.cubic), useNativeDriver: true }), Animated.sequence([Animated.timing(lift, { toValue: -42 - index * 3, duration: 250, easing: Easing.out(Easing.quad), useNativeDriver: true }), Animated.spring(lift, { toValue: 0, speed: 13, bounciness: 18, useNativeDriver: true })]), Animated.sequence([Animated.timing(scale, { toValue: 1.12, duration: 250, useNativeDriver: true }), Animated.spring(scale, { toValue: 1, speed: 14, bounciness: 16, useNativeDriver: true })])]);
     const shake = Animated.sequence([-1, 1, -.85, .85, -.55, .55, 0].map((position) => Animated.timing(sway, { toValue: position, duration: 55, easing: Easing.linear, useNativeDriver: true })));
     const quickFlip = Animated.parallel([Animated.timing(spin, { toValue: 1, duration: 320 + index * 20, easing: Easing.out(Easing.back(1.4)), useNativeDriver: true }), Animated.sequence([Animated.timing(scale, { toValue: .82, duration: 110, useNativeDriver: true }), Animated.spring(scale, { toValue: 1, speed: 24, bounciness: 8, useNativeDriver: true })])]);
-    (animation === 'bounceSpin' ? bounceSpin : animation === 'shake' ? shake : animation === 'quickFlip' ? quickFlip : classic).start();
+    (animation === 'bounceSpin' ? bounceSpin : animation === 'shake' ? shake : animation === 'quickFlip' ? quickFlip : classic).start(({ finished }) => {
+      if (!finished) return;
+      spin.setValue(0); lift.setValue(0); scale.setValue(1); sway.setValue(0);
+    });
   }, [animation, held, index, lift, reduceMotion, rollToken, scale, spin, sway]);
 
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', index % 2 === 0 ? '720deg' : '-720deg'] });
   const translateX = sway.interpolate({ inputRange: [-1, 1], outputRange: [-11, 11] });
-  return <Animated.View style={[styles.dieSlot, compact && styles.previewDieSlot, { transform: [{ translateX }, { translateY: lift }, { rotate }, { scale }] }, held && styles.heldDieSlot]}>
+  return <Animated.View style={[styles.dieSlot, compact && styles.previewDieSlot, { transform: [{ translateX: resetPosition ? 0 : translateX }, { translateY: resetPosition ? 0 : lift }, { rotate: resetPosition ? '0deg' : rotate }, { scale: resetPosition ? 1 : scale }] }, held && styles.heldDieSlot]}>
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`Die ${index + 1}, ${value}${held ? ', held' : ''}`}
