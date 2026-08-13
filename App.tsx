@@ -8,8 +8,7 @@ import './src/services/amplify';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { AboutScreen } from './src/screens/AboutScreen';
 import { GameScreen } from './src/screens/GameScreen';
-import { LeaderboardScreen } from './src/screens/LeaderboardScreen';
-import { ProgressScreen } from './src/screens/ProgressScreen';
+import { StatsScreen } from './src/screens/StatsScreen';
 import { AuthProvider, useAuth } from './src/state/AuthContext';
 import { flushPendingScores } from './src/services/pendingScores';
 import { colors } from './src/theme';
@@ -20,13 +19,12 @@ import { Onboarding } from './src/components/Onboarding';
 import { dailyChallengeCompleted, disableDailyReminders, enableDailyReminders, refreshDailyReminders, updateReminderHour } from './src/services/dailyReminders';
 import { defaultDiceAnimation, DiceAnimation, diceAnimationStorageKey } from './src/lib/diceAnimation';
 
-type Tab = 'game' | 'leaderboard' | 'progress' | 'account' | 'about';
+type Tab = 'game' | 'stats' | 'account' | 'about';
 const scoreSuggestionsKey = 'yahtzee.score-suggestions.v1';
 const onboardingKey = 'yahtzee.onboarding.completed.v1';
 
 const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'leaderboard', label: 'Scores', icon: 'trophy-outline', activeIcon: 'trophy' },
-  { key: 'progress', label: 'Progress', icon: 'ribbon-outline', activeIcon: 'ribbon' },
+  { key: 'stats', label: 'Stats', icon: 'stats-chart-outline', activeIcon: 'stats-chart' },
   { key: 'game', label: 'Play', icon: 'dice-outline', activeIcon: 'dice' },
   { key: 'account', label: 'Account', icon: 'person-outline', activeIcon: 'person' },
   { key: 'about', label: 'About', icon: 'information-circle-outline', activeIcon: 'information-circle' },
@@ -61,7 +59,7 @@ export default function App() {
   const [resumeGameRequest, setResumeGameRequest] = useState(0);
   const [canContinueGame, setCanContinueGame] = useState(false);
   const [gameSettingsOpen, setGameSettingsOpen] = useState(true);
-  const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'leaderboard' ? 'High Scores' : tab === 'progress' ? 'Progress' : tab === 'account' ? 'Account' : 'About';
+  const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'stats' ? 'Stats' : tab === 'account' ? 'Account' : 'About';
 
   useEffect(() => {
     void Promise.all([AsyncStorage.getItem(scoreSuggestionsKey), AsyncStorage.getItem(onboardingKey), AsyncStorage.getItem(diceAnimationStorageKey), refreshDailyReminders()]).then(([suggestions, onboarding, savedAnimation, reminders]) => {
@@ -101,8 +99,7 @@ export default function App() {
         <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text numberOfLines={1} style={styles.logo}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
         <View style={styles.screen}>
           <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen resumeRequest={resumeGameRequest} onPlayNavigationChange={handlePlayNavigationChange} onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} diceAnimation={diceAnimation} onDiceAnimationChange={changeDiceAnimation} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenAccount={openAccount} /></View>
-          {tab === 'leaderboard' && <LeaderboardScreen onOpenAccount={() => openAccount(true)} />}
-          {tab === 'progress' && <ProgressScreen onCreateAccount={() => openAccount(true)} />}
+          {tab === 'stats' && <StatsScreen onOpenAccount={() => openAccount(true)} />}
           {tab === 'account' && <AccountScreen registrationRequest={accountRegistrationRequest} scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} remindersEnabled={remindersEnabled} reminderHour={reminderHour} onRemindersChange={(enabled) => void changeReminders(enabled)} onRequestReminders={() => changeReminders(true)} onReminderHourChange={(hour) => void changeReminderHour(hour)} />}
           {tab === 'about' && <AboutScreen />}
         </View>
