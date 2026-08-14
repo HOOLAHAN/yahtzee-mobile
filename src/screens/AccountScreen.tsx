@@ -23,8 +23,8 @@ interface AccountScreenProps {
   onReminderHourChange?: (hour: number) => void;
   diceAnimation?: DiceAnimation;
   onDiceAnimationChange?: (animation: DiceAnimation) => void;
-  arcadeFontEnabled?: boolean;
-  onArcadeFontChange?: (enabled: boolean) => void;
+  arcadeModeEnabled?: boolean;
+  onArcadeModeChange?: (enabled: boolean) => void;
 }
 
 const displayHour = (hour: number) => `${hour % 12 || 12}:00 ${hour < 12 ? 'am' : 'pm'}`;
@@ -45,7 +45,7 @@ const friendlyAuthError = (caught: unknown) => {
   return caught.message || 'Something went wrong. Please try again.';
 };
 
-export function AccountScreen({ registrationRequest = 0, scoreSuggestionsEnabled = true, onScoreSuggestionsChange, remindersEnabled = false, reminderHour = 19, onRemindersChange, onRequestReminders, onReminderHourChange, diceAnimation = defaultDiceAnimation, onDiceAnimationChange, arcadeFontEnabled = false, onArcadeFontChange }: AccountScreenProps) {
+export function AccountScreen({ registrationRequest = 0, scoreSuggestionsEnabled = true, onScoreSuggestionsChange, remindersEnabled = false, reminderHour = 19, onRemindersChange, onRequestReminders, onReminderHourChange, diceAnimation = defaultDiceAnimation, onDiceAnimationChange, arcadeModeEnabled = false, onArcadeModeChange }: AccountScreenProps) {
   const auth = useAuth();
   const scrollRef = useRef<ScrollView>(null);
   const [mode, setMode] = useState<Mode>('login');
@@ -144,7 +144,7 @@ export function AccountScreen({ registrationRequest = 0, scoreSuggestionsEnabled
     <Text style={styles.sectionTitle}>Gameplay</Text>
     <Text style={styles.sectionDescription}>Choose how much guidance appears while you play.</Text>
     <View style={styles.preferenceRow}><View style={styles.actionIcon}><Ionicons name="sparkles-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Score suggestions</Text><Text style={styles.actionDescription}>Highlight the recommended category and show “Best now”</Text></View><Switch accessibilityLabel="Score suggestions" value={scoreSuggestionsEnabled} onValueChange={(value) => { onScoreSuggestionsChange?.(value); savePreferences(value, remindersEnabled, reminderHour); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={scoreSuggestionsEnabled ? colors.cyan : colors.muted} /></View>
-    <View style={[styles.preferenceRow, { marginTop: 10 }]}><View style={styles.actionIcon}><Ionicons name="game-controller-outline" size={21} color={colors.pink} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Arcade font</Text><Text style={styles.actionDescription}>Use a retro monospace typeface throughout the app</Text></View><Switch accessibilityLabel="Arcade font" value={arcadeFontEnabled} onValueChange={(value) => onArcadeFontChange?.(value)} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={arcadeFontEnabled ? colors.cyan : colors.muted} /></View>
+    <View style={[styles.preferenceRow, { marginTop: 10 }]}><View style={styles.actionIcon}><Ionicons name="game-controller-outline" size={21} color={colors.pink} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Arcade mode</Text><Text style={styles.actionDescription}>Switch to an 8-bit inspired interface with code-style text and pixel effects</Text></View><Switch accessibilityLabel="Arcade mode" value={arcadeModeEnabled} onValueChange={(value) => onArcadeModeChange?.(value)} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={arcadeModeEnabled ? colors.cyan : colors.muted} /></View>
     <Text style={styles.preferenceSubheading}>Dice animation</Text><Text style={styles.preferenceHelp}>Choose how digital dice move. Tap a style to preview it.</Text>
     <View style={styles.animationGrid}>{diceAnimationOptions.map((option) => { const selected = diceAnimation === option.value; return <Pressable key={option.value} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => { onDiceAnimationChange?.(option.value); setAnimationPreviewToken((token) => token + 1); void Haptics.selectionAsync(); }} style={({ pressed }) => [styles.animationChoice, selected && styles.animationChoiceSelected, pressed && { opacity: .75 }]}><AnimationPreview animation={option.value} active={selected} token={animationPreviewToken} /><View style={styles.animationCopy}><Text style={[styles.animationTitle, selected && styles.animationTitleSelected]}>{option.label}</Text><Text style={styles.animationDescription}>{option.description}</Text></View>{selected && <Ionicons name="checkmark-circle" size={18} color={colors.cyan} />}</Pressable>; })}</View>
 

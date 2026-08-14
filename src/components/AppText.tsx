@@ -1,13 +1,22 @@
 import { createContext, PropsWithChildren, useContext } from 'react';
 import { Platform, Text as NativeText, TextProps } from 'react-native';
 
-const ArcadeFontContext = createContext(false);
+const ArcadeModeContext = createContext(false);
 
-export function ArcadeFontProvider({ enabled, children }: PropsWithChildren<{ enabled: boolean }>) {
-  return <ArcadeFontContext.Provider value={enabled}>{children}</ArcadeFontContext.Provider>;
+export function ArcadeModeProvider({ enabled, children }: PropsWithChildren<{ enabled: boolean }>) {
+  return <ArcadeModeContext.Provider value={enabled}>{children}</ArcadeModeContext.Provider>;
 }
+
+export const useArcadeMode = () => useContext(ArcadeModeContext);
 
 export function AppText({ style, ...props }: TextProps) {
-  const arcadeFontEnabled = useContext(ArcadeFontContext);
-  return <NativeText {...props} style={[arcadeFontEnabled && { fontFamily: Platform.select({ ios: 'Courier New', android: 'monospace' }) }, style]} />;
+  const arcadeModeEnabled = useArcadeMode();
+  return <NativeText {...props} style={[arcadeModeEnabled && styles.arcadeText, style]} />;
 }
+
+const styles = {
+  arcadeText: {
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
+    letterSpacing: 0.35,
+  },
+};
