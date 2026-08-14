@@ -108,12 +108,6 @@ export const filterResultsByPeriod = <T extends { completedAt?: string; timestam
   const start = periodStart(period); if (!start) return results;
   return results.filter((result) => new Date(result.completedAt ?? result.timestamp ?? 0) >= start);
 };
-export const bestResultPerPlayer = <T extends { userId: string; score: number }>(results: T[]) => {
-  const best = new Map<string, T>();
-  results.forEach((result) => { if (!best.has(result.userId) || result.score > best.get(result.userId)!.score) best.set(result.userId, result); });
-  return [...best.values()].sort((a, b) => b.score - a.score);
-};
-
 export interface PeriodLeaderboardEntry {
   id: string; userId: string; username: string; score: number; timestamp: string;
 }

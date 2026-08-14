@@ -5,7 +5,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { fetchLeaderboard, fetchUserScores, LeaderboardScore } from '../services/scores';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
-import { bestResultPerPlayer, fetchAllDailyResults, fetchDailyResults, fetchMyGameResults, fetchSoloResults, filterResultsByPeriod, GameResult, ResultMode, ResultPeriod } from '../services/gameResults';
+import { fetchAllDailyResults, fetchDailyResults, fetchMyGameResults, fetchSoloResults, filterResultsByPeriod, GameResult, ResultMode, ResultPeriod } from '../services/gameResults';
 import { localDateKey } from '../lib/dailyChallenge';
 
 type Period = ResultPeriod;
@@ -78,10 +78,10 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
         ]);
         const indexed = details.filter((result) => result.mode === 'SOLO').map((result) => ({ ...result, timestamp: result.completedAt } as LeaderboardEntry));
         const indexedIds = new Set(indexed.map((result) => result.id));
-        setScores(bestResultPerPlayer(filterResultsByPeriod([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))], period)).slice(0, 100));
+        setScores(filterResultsByPeriod([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))], period).sort((a, b) => b.score - a.score).slice(0, 100));
       } else {
         const daily = period === 'today' ? await fetchDailyResults(localDateKey()) : filterResultsByPeriod(await fetchAllDailyResults(1000), period);
-        setScores(bestResultPerPlayer(daily).slice(0, 100) as LeaderboardEntry[]);
+        setScores([...daily].sort((a, b) => b.score - a.score).slice(0, 100) as LeaderboardEntry[]);
       }
       setLastUpdated(new Date());
     }
