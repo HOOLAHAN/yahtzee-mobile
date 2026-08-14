@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -18,10 +18,12 @@ import * as Notifications from 'expo-notifications';
 import { Onboarding } from './src/components/Onboarding';
 import { dailyChallengeCompleted, disableDailyReminders, enableDailyReminders, refreshDailyReminders, updateReminderHour } from './src/services/dailyReminders';
 import { defaultDiceAnimation, DiceAnimation, diceAnimationStorageKey } from './src/lib/diceAnimation';
+import { AppText as Text, ArcadeFontProvider } from './src/components/AppText';
 
 type Tab = 'game' | 'stats' | 'account' | 'about';
 const scoreSuggestionsKey = 'yahtzee.score-suggestions.v1';
 const onboardingKey = 'yahtzee.onboarding.completed.v1';
+const arcadeFontKey = 'yahtzee.arcade-font.v1';
 
 const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }[] = [
   { key: 'stats', label: 'Stats', icon: 'stats-chart-outline', activeIcon: 'stats-chart' },
@@ -51,6 +53,7 @@ export default function App() {
   const [gameHeaderTitle, setGameHeaderTitle] = useState('Yahtzee!');
   const [scoreSuggestionsEnabled, setScoreSuggestionsEnabled] = useState(true);
   const [diceAnimation, setDiceAnimation] = useState<DiceAnimation>(defaultDiceAnimation);
+  const [arcadeFontEnabled, setArcadeFontEnabled] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dailyLaunchRequest, setDailyLaunchRequest] = useState(0);
   const [remindersEnabled, setRemindersEnabled] = useState(false);
@@ -59,12 +62,14 @@ export default function App() {
   const [resumeGameRequest, setResumeGameRequest] = useState(0);
   const [canContinueGame, setCanContinueGame] = useState(false);
   const [gameSettingsOpen, setGameSettingsOpen] = useState(true);
+  const [dailyLeaderboardRequest, setDailyLeaderboardRequest] = useState(0);
   const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'stats' ? 'Stats' : tab === 'account' ? 'Account' : 'About';
 
   useEffect(() => {
-    void Promise.all([AsyncStorage.getItem(scoreSuggestionsKey), AsyncStorage.getItem(onboardingKey), AsyncStorage.getItem(diceAnimationStorageKey), refreshDailyReminders()]).then(([suggestions, onboarding, savedAnimation, reminders]) => {
+    void Promise.all([AsyncStorage.getItem(scoreSuggestionsKey), AsyncStorage.getItem(onboardingKey), AsyncStorage.getItem(diceAnimationStorageKey), AsyncStorage.getItem(arcadeFontKey), refreshDailyReminders()]).then(([suggestions, onboarding, savedAnimation, savedArcadeFont, reminders]) => {
       if (suggestions !== null) setScoreSuggestionsEnabled(suggestions !== 'false');
       if (savedAnimation) setDiceAnimation(savedAnimation as DiceAnimation);
+      setArcadeFontEnabled(savedArcadeFont === 'true');
       setShowOnboarding(onboarding !== 'true');
       setRemindersEnabled(reminders.enabled); setReminderHour(reminders.hour);
     });
@@ -77,6 +82,7 @@ export default function App() {
   }, []);
   const changeScoreSuggestions = (enabled: boolean) => { setScoreSuggestionsEnabled(enabled); void AsyncStorage.setItem(scoreSuggestionsKey, String(enabled)); };
   const changeDiceAnimation = (animation: DiceAnimation) => { setDiceAnimation(animation); void AsyncStorage.setItem(diceAnimationStorageKey, animation); };
+  const changeArcadeFont = (enabled: boolean) => { setArcadeFontEnabled(enabled); void AsyncStorage.setItem(arcadeFontKey, String(enabled)); };
   const finishOnboarding = () => { setShowOnboarding(false); void AsyncStorage.setItem(onboardingKey, 'true'); };
   const changeReminders = async (enabled: boolean) => {
     if (!enabled) { await disableDailyReminders(); setRemindersEnabled(false); return false; }
@@ -91,16 +97,16 @@ export default function App() {
   const openAccount = (createAccount = false) => { if (createAccount) setAccountRegistrationRequest((value) => value + 1); setTab('account'); };
 
   return (
-    <SafeAreaProvider>
+    <ArcadeFontProvider enabled={arcadeFontEnabled}><SafeAreaProvider>
     <AuthProvider>
       <PendingScoreSync />
       <SafeAreaView style={styles.safeArea}>
         <StatusBar style="light" />
         <View style={styles.header}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text numberOfLines={1} style={styles.logo}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
         <View style={styles.screen}>
-          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen resumeRequest={resumeGameRequest} onPlayNavigationChange={handlePlayNavigationChange} onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} diceAnimation={diceAnimation} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenAccount={openAccount} /></View>
-          {tab === 'stats' && <StatsScreen onOpenAccount={() => openAccount(true)} />}
-          {tab === 'account' && <AccountScreen registrationRequest={accountRegistrationRequest} scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} diceAnimation={diceAnimation} onDiceAnimationChange={changeDiceAnimation} remindersEnabled={remindersEnabled} reminderHour={reminderHour} onRemindersChange={(enabled) => void changeReminders(enabled)} onRequestReminders={() => changeReminders(true)} onReminderHourChange={(hour) => void changeReminderHour(hour)} />}
+          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen resumeRequest={resumeGameRequest} onPlayNavigationChange={handlePlayNavigationChange} onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} diceAnimation={diceAnimation} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenDailyLeaderboard={() => { setDailyLeaderboardRequest((value) => value + 1); setTab('stats'); }} onOpenAccount={openAccount} /></View>
+          {tab === 'stats' && <StatsScreen onOpenAccount={() => openAccount(true)} dailyLeaderboardRequest={dailyLeaderboardRequest} />}
+          {tab === 'account' && <AccountScreen registrationRequest={accountRegistrationRequest} scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} diceAnimation={diceAnimation} onDiceAnimationChange={changeDiceAnimation} arcadeFontEnabled={arcadeFontEnabled} onArcadeFontChange={changeArcadeFont} remindersEnabled={remindersEnabled} reminderHour={reminderHour} onRemindersChange={(enabled) => void changeReminders(enabled)} onRequestReminders={() => changeReminders(true)} onReminderHourChange={(hour) => void changeReminderHour(hour)} />}
           {tab === 'about' && <AboutScreen />}
         </View>
         <View style={styles.tabBar}>
@@ -114,7 +120,7 @@ export default function App() {
         <Onboarding visible={showOnboarding} onFinish={finishOnboarding} onEnableReminders={() => changeReminders(true)} />
       </SafeAreaView>
     </AuthProvider>
-    </SafeAreaProvider>
+    </SafeAreaProvider></ArcadeFontProvider>
   );
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { AppText as Text } from '../components/AppText';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
@@ -22,6 +23,8 @@ interface AccountScreenProps {
   onReminderHourChange?: (hour: number) => void;
   diceAnimation?: DiceAnimation;
   onDiceAnimationChange?: (animation: DiceAnimation) => void;
+  arcadeFontEnabled?: boolean;
+  onArcadeFontChange?: (enabled: boolean) => void;
 }
 
 const displayHour = (hour: number) => `${hour % 12 || 12}:00 ${hour < 12 ? 'am' : 'pm'}`;
@@ -42,7 +45,7 @@ const friendlyAuthError = (caught: unknown) => {
   return caught.message || 'Something went wrong. Please try again.';
 };
 
-export function AccountScreen({ registrationRequest = 0, scoreSuggestionsEnabled = true, onScoreSuggestionsChange, remindersEnabled = false, reminderHour = 19, onRemindersChange, onRequestReminders, onReminderHourChange, diceAnimation = defaultDiceAnimation, onDiceAnimationChange }: AccountScreenProps) {
+export function AccountScreen({ registrationRequest = 0, scoreSuggestionsEnabled = true, onScoreSuggestionsChange, remindersEnabled = false, reminderHour = 19, onRemindersChange, onRequestReminders, onReminderHourChange, diceAnimation = defaultDiceAnimation, onDiceAnimationChange, arcadeFontEnabled = false, onArcadeFontChange }: AccountScreenProps) {
   const auth = useAuth();
   const scrollRef = useRef<ScrollView>(null);
   const [mode, setMode] = useState<Mode>('login');
@@ -141,6 +144,7 @@ export function AccountScreen({ registrationRequest = 0, scoreSuggestionsEnabled
     <Text style={styles.sectionTitle}>Gameplay</Text>
     <Text style={styles.sectionDescription}>Choose how much guidance appears while you play.</Text>
     <View style={styles.preferenceRow}><View style={styles.actionIcon}><Ionicons name="sparkles-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Score suggestions</Text><Text style={styles.actionDescription}>Highlight the recommended category and show “Best now”</Text></View><Switch accessibilityLabel="Score suggestions" value={scoreSuggestionsEnabled} onValueChange={(value) => { onScoreSuggestionsChange?.(value); savePreferences(value, remindersEnabled, reminderHour); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={scoreSuggestionsEnabled ? colors.cyan : colors.muted} /></View>
+    <View style={[styles.preferenceRow, { marginTop: 10 }]}><View style={styles.actionIcon}><Ionicons name="game-controller-outline" size={21} color={colors.pink} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Arcade font</Text><Text style={styles.actionDescription}>Use a retro monospace typeface throughout the app</Text></View><Switch accessibilityLabel="Arcade font" value={arcadeFontEnabled} onValueChange={(value) => onArcadeFontChange?.(value)} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={arcadeFontEnabled ? colors.cyan : colors.muted} /></View>
     <Text style={styles.preferenceSubheading}>Dice animation</Text><Text style={styles.preferenceHelp}>Choose how digital dice move. Tap a style to preview it.</Text>
     <View style={styles.animationGrid}>{diceAnimationOptions.map((option) => { const selected = diceAnimation === option.value; return <Pressable key={option.value} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => { onDiceAnimationChange?.(option.value); setAnimationPreviewToken((token) => token + 1); void Haptics.selectionAsync(); }} style={({ pressed }) => [styles.animationChoice, selected && styles.animationChoiceSelected, pressed && { opacity: .75 }]}><AnimationPreview animation={option.value} active={selected} token={animationPreviewToken} /><View style={styles.animationCopy}><Text style={[styles.animationTitle, selected && styles.animationTitleSelected]}>{option.label}</Text><Text style={styles.animationDescription}>{option.description}</Text></View>{selected && <Ionicons name="checkmark-circle" size={18} color={colors.cyan} />}</Pressable>; })}</View>
 
@@ -270,7 +274,7 @@ const styles = StyleSheet.create({
   profileCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 18, padding: 18, marginBottom: 2 },
   signUpReminder: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 12, padding: 13, marginBottom: 10 }, signUpReminderCopy: { flex: 1 }, signUpReminderTitle: { color: colors.white, fontWeight: '900', fontSize: 13 }, signUpReminderText: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
   preferenceRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 13, padding: 12 },
-  preferenceSubheading: { color: colors.white, fontSize: 15, fontWeight: '900', marginTop: 17, marginBottom: 3 }, preferenceHelp: { color: colors.muted, fontSize: 11, lineHeight: 16, marginBottom: 9 }, animationGrid: { gap: 7 }, animationChoice: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 9, padding: 9, borderRadius: 12, borderColor: '#2d3c40', borderWidth: 1, backgroundColor: colors.surface }, animationChoiceSelected: { borderColor: colors.cyan, backgroundColor: '#152326' }, animationCopy: { flex: 1 }, animationTitle: { color: colors.white, fontSize: 13, fontWeight: '900' }, animationTitleSelected: { color: colors.cyan }, animationDescription: { color: colors.muted, fontSize: 9.5, lineHeight: 14, marginTop: 2 },
+  preferenceSubheading: { color: colors.white, fontSize: 15, fontWeight: '900', marginTop: 17, marginBottom: 3 }, preferenceHelp: { color: colors.muted, fontSize: 11, lineHeight: 16, marginBottom: 9 }, animationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, animationChoice: { width: '48.5%', minHeight: 126, alignItems: 'center', justifyContent: 'center', padding: 9, borderRadius: 12, borderColor: '#2d3c40', borderWidth: 1, backgroundColor: colors.surface }, animationChoiceSelected: { borderColor: colors.cyan, backgroundColor: '#152326' }, animationCopy: { alignItems: 'center' }, animationTitle: { color: colors.white, fontSize: 12, fontWeight: '900', textAlign: 'center' }, animationTitleSelected: { color: colors.cyan }, animationDescription: { color: colors.muted, fontSize: 8.5, lineHeight: 12, marginTop: 2, textAlign: 'center' },
   notificationCard: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 13, padding: 12 }, preferenceRowInner: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10 }, timeControl: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, paddingHorizontal: 12, borderTopColor: '#2d3c40', borderTopWidth: 1 }, timeButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderColor: '#315a5e', borderWidth: 1, backgroundColor: colors.background }, timeValue: { color: colors.yellow, fontSize: 17, fontWeight: '900', textAlign: 'center' }, timeLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 1, textAlign: 'center', marginTop: 2 },
   avatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#20383b', borderColor: colors.cyan, borderWidth: 1, alignItems: 'center', justifyContent: 'center' }, avatarText: { color: colors.cyan, fontSize: 25, fontWeight: '900' },
   profileDetails: { flex: 1, marginLeft: 15 }, username: { color: colors.yellow, fontSize: 22, fontWeight: '900' }, email: { color: colors.mint, marginTop: 3 }, statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 }, statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.cyan, marginRight: 6 }, statusText: { color: colors.muted, fontSize: 12, fontWeight: '700' },

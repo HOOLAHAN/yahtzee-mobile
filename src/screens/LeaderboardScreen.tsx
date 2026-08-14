@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, AppState, Easing, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, AppState, Easing, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text } from '../components/AppText';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { fetchLeaderboard, fetchUserScores, LeaderboardScore } from '../services/scores';
 import { useAuth } from '../state/AuthContext';
@@ -21,7 +22,7 @@ function ScorecardBreakdown({ value }: { value?: string }) {
   return <View style={styles.scorecard}><View style={styles.scorecardHeading}><Text style={styles.scorecardTitle}>Scorecard</Text><Text style={styles.scorecardTotal}>Upper {upper} · Bonus {bonus}</Text></View><View style={styles.scorecardColumns}>{column('UPPER', upperCategories)}{column('LOWER', lowerCategories)}</View></View>;
 }
 
-export function LeaderboardScreen({ onOpenAccount }: { onOpenAccount?: () => void }) {
+export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }: { onOpenAccount?: () => void; dailyLeaderboardRequest?: number }) {
   const { user } = useAuth();
   const [scores, setScores] = useState<LeaderboardEntry[]>([]);
   const [historyScores, setHistoryScores] = useState<LeaderboardEntry[]>([]);
@@ -89,6 +90,7 @@ export function LeaderboardScreen({ onOpenAccount }: { onOpenAccount?: () => voi
   }, [competition, historyDate, historyMode, mine, period, user]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (dailyLeaderboardRequest > 0) { setMine(false); setCompetition('daily'); setPeriod('today'); } }, [dailyLeaderboardRequest]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') void load(); });
     return () => subscription.remove();

@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from '../components/AppText';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { colors } from '../theme';
@@ -8,8 +9,9 @@ import { ProgressScreen } from './ProgressScreen';
 
 type StatsView = 'leaderboards' | 'progress';
 
-export function StatsScreen({ onOpenAccount }: { onOpenAccount?: () => void }) {
+export function StatsScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }: { onOpenAccount?: () => void; dailyLeaderboardRequest?: number }) {
   const [view, setView] = useState<StatsView>('leaderboards');
+  useEffect(() => { if (dailyLeaderboardRequest > 0) setView('leaderboards'); }, [dailyLeaderboardRequest]);
 
   const selectView = (next: StatsView) => {
     if (next === view) return;
@@ -40,7 +42,7 @@ export function StatsScreen({ onOpenAccount }: { onOpenAccount?: () => void }) {
     </View>
     <View style={styles.content}>
       {view === 'leaderboards'
-        ? <LeaderboardScreen onOpenAccount={onOpenAccount} />
+        ? <LeaderboardScreen onOpenAccount={onOpenAccount} dailyLeaderboardRequest={dailyLeaderboardRequest} />
         : <ProgressScreen onCreateAccount={onOpenAccount} />}
     </View>
   </View>;

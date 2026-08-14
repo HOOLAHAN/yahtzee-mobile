@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../theme';
 
