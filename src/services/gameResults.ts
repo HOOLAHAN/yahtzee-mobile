@@ -3,11 +3,12 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import { GameResultMetrics } from '../lib/engagement';
 import { graphqlWithDevLog } from '../lib/apiLogger';
 
-export type ResultMode = 'SOLO' | 'DAILY';
+export type ResultMode = 'SOLO' | 'DAILY' | 'COMPUTER' | 'PASS' | 'REAL';
 export interface GameResult extends GameResultMetrics {
   id: string; userId: string; username: string; mode: ResultMode; modeDate: string;
   challengeDate?: string; completedAt: string; yahtzeeOnFinalRoll: boolean;
   scorecard?: string;
+  session?: string;
 }
 
 export interface DailyRoundStanding {
@@ -20,7 +21,7 @@ export interface DailyRoundStanding {
 }
 
 const client = generateClient();
-const fields = 'id userId username mode modeDate challengeDate score completedAt yahtzeeCount earnedUpperBonus completedSmallStraight completedLargeStraight noZeroScores yahtzeeOnFinalRoll scorecard';
+const fields = 'id userId username mode modeDate challengeDate score completedAt yahtzeeCount earnedUpperBonus completedSmallStraight completedLargeStraight noZeroScores yahtzeeOnFinalRoll scorecard session';
 
 async function authToken() {
   const session = await fetchAuthSession();
@@ -85,6 +86,33 @@ export async function fetchAllDailyResults(limit = 500) {
   if (!('data' in result)) throw new Error('Unable to load Daily Challenge results.');
   return result.data.gameResultsByMode.items.filter(Boolean) as GameResult[];
 }
+
+export async function fetchResultsByMode(mode: ResultMode, limit = 1000) {
+  const result = await graphqlWithDevLog(client, {
+    query: `query ResultsByMode($mode:GameMode!,$limit:Int){gameResultsByMode(mode:$mode,sortDirection:DESC,limit:$limit){items{${fields}}}}`,
+    authMode: 'apiKey', variables: { mode, limit },
+  });
+  if (!('data' in result)) throw new Error('Unable to load game results.');
+  return result.data.gameResultsByMode.items.filter(Boolean) as GameResult[];
+}
+
+export type ResultPeriod = 'today' | 'week' | 'month' | 'all';
+export const periodStart = (period: ResultPeriod, now = new Date()) => {
+  if (period === 'all') return null;
+  const start = new Date(now); start.setHours(0, 0, 0, 0);
+  if (period === 'today') return start;
+  if (period === 'week') { const day = start.getDay() || 7; start.setDate(start.getDate() - day + 1); return start; }
+  start.setDate(1); return start;
+};
+export const filterResultsByPeriod = <T extends { completedAt?: string; timestamp?: string }>(results: T[], period: ResultPeriod) => {
+  const start = periodStart(period); if (!start) return results;
+  return results.filter((result) => new Date(result.completedAt ?? result.timestamp ?? 0) >= start);
+};
+export const bestResultPerPlayer = <T extends { userId: string; score: number }>(results: T[]) => {
+  const best = new Map<string, T>();
+  results.forEach((result) => { if (!best.has(result.userId) || result.score > best.get(result.userId)!.score) best.set(result.userId, result); });
+  return [...best.values()].sort((a, b) => b.score - a.score);
+};
 
 export interface PeriodLeaderboardEntry {
   id: string; userId: string; username: string; score: number; timestamp: string;

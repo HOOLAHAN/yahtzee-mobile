@@ -387,17 +387,22 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   }, [gameId, hydrated, queued]);
 
   useEffect(() => {
-    if (!hydrated || !complete || progressRecorded || twoPlayer || !user) return;
+    if (!hydrated || !complete || progressRecorded || !user) return;
     const metrics = resultMetrics(histories[1]);
-    const mode = dailyMode ? 'DAILY' : 'SOLO';
+    const mode = dailyMode ? 'DAILY' : computerOpponent ? 'COMPUTER' : twoPlayer ? 'PASS' : 'SOLO';
+    const session = twoPlayer && !computerOpponent ? JSON.stringify({ players: [
+      { name: 'Player 1', score: totalScore(histories[1]), scorecard: JSON.parse(resultMetrics(histories[1]).scorecard ?? '{}') },
+      { name: 'Player 2', score: totalScore(histories[2]), scorecard: JSON.parse(resultMetrics(histories[2]).scorecard ?? '{}') },
+    ] }) : undefined;
     const completedAt = new Date().toISOString();
     void createGameResult({
       id: dailyMode ? `daily:${dailyDate}:${user.userId}` : gameId,
       mode,
-      modeDate: dailyMode ? `DAILY#${dailyDate}` : 'SOLO#ALL',
+      modeDate: dailyMode ? `DAILY#${dailyDate}` : `${mode}#ALL`,
       challengeDate: dailyMode ? dailyDate : undefined,
       completedAt,
       ...metrics,
+      session,
       yahtzeeOnFinalRoll,
     }).then(async (savedResult) => {
       setProgressRecorded(true);
@@ -412,7 +417,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       if (dailyMode && /ConditionalCheckFailed|conditional request|already exists/i.test(message)) setProgressRecorded(true);
       else console.error('[gameResults.create]', error);
     });
-  }, [complete, dailyDate, dailyMode, gameId, histories, hydrated, progressRecorded, twoPlayer, user, yahtzeeOnFinalRoll]);
+  }, [complete, computerOpponent, dailyDate, dailyMode, gameId, histories, hydrated, progressRecorded, twoPlayer, user, yahtzeeOnFinalRoll]);
 
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -656,7 +661,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   };
 
   useEffect(() => {
-    const leaderboardEligible = !dailyMode && (!twoPlayer || computerOpponent);
+    const leaderboardEligible = !dailyMode && !twoPlayer;
     if (!hydrated || !complete || !leaderboardEligible || !user || submitting || submitted || queued) return;
     void sendScore();
     // sendScore intentionally runs once for this persisted game ID. Its status

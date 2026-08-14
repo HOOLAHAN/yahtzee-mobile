@@ -4,10 +4,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { fetchLeaderboard, fetchUserScores, LeaderboardScore } from '../services/scores';
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
-import { fetchAllDailyResults, fetchDailyResults, fetchMyGameResults, fetchSoloResults, fetchWeeklyResults, GameResult } from '../services/gameResults';
+import { bestResultPerPlayer, fetchAllDailyResults, fetchDailyResults, fetchMyGameResults, fetchSoloResults, filterResultsByPeriod, GameResult, ResultMode, ResultPeriod } from '../services/gameResults';
 import { localDateKey } from '../lib/dailyChallenge';
 
-type Period = 'today' | 'week' | 'all';
+type Period = ResultPeriod;
 type Competition = 'solo' | 'daily';
 type LeaderboardEntry = LeaderboardScore & Partial<GameResult> & { aggregate?: boolean };
 const scoreLabels: Record<string, string> = { Ones: 'Ones', Twos: 'Twos', Threes: 'Threes', Fours: 'Fours', Fives: 'Fives', Sixes: 'Sixes', 'Three of a Kind': '3 of a Kind', 'Four of a Kind': '4 of a Kind', 'Full House': 'Full House', 'Small Straight': 'Small Straight', 'Large Straight': 'Large Straight', Yahtzee: 'Yahtzee', Chance: 'Chance' };
@@ -24,9 +24,12 @@ function ScorecardBreakdown({ value }: { value?: string }) {
 export function LeaderboardScreen({ onOpenAccount }: { onOpenAccount?: () => void }) {
   const { user } = useAuth();
   const [scores, setScores] = useState<LeaderboardEntry[]>([]);
+  const [historyScores, setHistoryScores] = useState<LeaderboardEntry[]>([]);
   const [mine, setMine] = useState(false);
   const [period, setPeriod] = useState<Period>('all');
   const [competition, setCompetition] = useState<Competition>('solo');
+  const [historyMode, setHistoryMode] = useState<'ALL' | ResultMode>('ALL');
+  const [historyDate, setHistoryDate] = useState<'all' | 'week' | 'month'>('all');
   const [selected, setSelected] = useState<LeaderboardEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -59,24 +62,30 @@ export function LeaderboardScreen({ onOpenAccount }: { onOpenAccount?: () => voi
     setLoading(true);
     setError('');
     try {
-      if (competition === 'solo') {
+      if (mine && user) {
+        const [details, legacy] = await Promise.all([fetchMyGameResults(user.userId), fetchUserScores(user.userId)]);
+        const indexedIds = new Set(details.map((result) => result.id));
+        const history = [...details.map((result) => ({ ...result, timestamp: result.completedAt } as LeaderboardEntry)), ...legacy.filter((score) => !indexedIds.has(score.id)).map((score) => ({ ...score, mode: 'SOLO' as const } as LeaderboardEntry))];
+        const datedHistory = filterResultsByPeriod(history, historyDate);
+        setHistoryScores(datedHistory);
+        setScores(datedHistory.filter((result) => historyMode === 'ALL' || result.mode === historyMode).sort((a, b) => new Date(b.completedAt ?? b.timestamp).getTime() - new Date(a.completedAt ?? a.timestamp).getTime()).slice(0, 100));
+      } else if (competition === 'solo') {
         const [legacy, details] = await Promise.all([
           mine && user ? fetchUserScores(user.userId) : fetchLeaderboard(),
           mine && user ? fetchMyGameResults(user.userId) : fetchSoloResults(100),
         ]);
         const indexed = details.filter((result) => result.mode === 'SOLO').map((result) => ({ ...result, timestamp: result.completedAt } as LeaderboardEntry));
         const indexedIds = new Set(indexed.map((result) => result.id));
-        setScores([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))].sort((a, b) => b.score - a.score).slice(0, 100));
+        setScores(bestResultPerPlayer(filterResultsByPeriod([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))], period)).slice(0, 100));
       } else {
-        const daily = period === 'today' ? await fetchDailyResults(localDateKey()) : period === 'week' ? (await fetchWeeklyResults()).map((entry) => ({ ...entry, aggregate: true })) : await fetchAllDailyResults();
-        const visible = mine && user ? daily.filter((score) => score.userId === user.userId) : daily;
-        setScores(visible.slice(0, 100) as LeaderboardEntry[]);
+        const daily = period === 'today' ? await fetchDailyResults(localDateKey()) : filterResultsByPeriod(await fetchAllDailyResults(1000), period);
+        setScores(bestResultPerPlayer(daily).slice(0, 100) as LeaderboardEntry[]);
       }
       setLastUpdated(new Date());
     }
     catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to load scores.'); }
     finally { setLoading(false); }
-  }, [competition, mine, period, user]);
+  }, [competition, historyDate, historyMode, mine, period, user]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -86,23 +95,23 @@ export function LeaderboardScreen({ onOpenAccount }: { onOpenAccount?: () => voi
 
   return (
     <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { setLoading(true); void load(); }} tintColor={colors.cyan} />}>
-      <Text style={styles.intro}>Solo scores and Daily Challenge results are ranked separately.</Text>
+      <Text style={styles.intro}>{mine ? 'Every recorded game, with filters and per-mode performance.' : 'Competitive Solo and Daily Challenge rankings.'}</Text>
       <View style={styles.controlPanel}>
-        <View style={styles.competitionRow}><Pressable onPress={() => { setLoading(true); setCompetition('solo'); setPeriod('all'); }} style={[styles.competition, competition === 'solo' && styles.competitionActive]}><View style={[styles.competitionIcon, competition === 'solo' && styles.competitionIconActive]}><Ionicons name="person-outline" size={17} color={competition === 'solo' ? colors.yellow : colors.muted} /></View><View><Text style={[styles.competitionText, competition === 'solo' && styles.competitionTextActive]}>Solo</Text><Text style={styles.competitionCaption}>Classic games</Text></View></Pressable><Pressable onPress={() => { setLoading(true); setCompetition('daily'); }} style={[styles.competition, competition === 'daily' && styles.competitionActive]}><View style={[styles.competitionIcon, competition === 'daily' && styles.competitionIconActive]}><Ionicons name="sunny-outline" size={17} color={competition === 'daily' ? colors.yellow : colors.muted} /></View><View><Text style={[styles.competitionText, competition === 'daily' && styles.competitionTextActive]}>Daily</Text><Text style={styles.competitionCaption}>Same rolls</Text></View></Pressable></View>
-        <View style={styles.controlDivider} />
-        {competition === 'daily' && <View style={styles.periodRow}>{(['today', 'week', 'all'] as Period[]).map((item) => <Pressable key={item} onPress={() => { setLoading(true); setPeriod(item); }} style={[styles.period, period === item && styles.periodActive]}><Text style={[styles.periodText, period === item && styles.periodTextActive]}>{item === 'today' ? 'Today' : item === 'week' ? 'Week' : 'All time'}</Text></Pressable>)}</View>}
+        {!mine && <><View style={styles.competitionRow}><Pressable onPress={() => { setLoading(true); setCompetition('solo'); if (period === 'today') setPeriod('week'); }} style={[styles.competition, competition === 'solo' && styles.competitionActive]}><View style={[styles.competitionIcon, competition === 'solo' && styles.competitionIconActive]}><Ionicons name="person-outline" size={17} color={competition === 'solo' ? colors.yellow : colors.muted} /></View><View><Text style={[styles.competitionText, competition === 'solo' && styles.competitionTextActive]}>Solo</Text><Text style={styles.competitionCaption}>Classic games</Text></View></Pressable><Pressable onPress={() => { setLoading(true); setCompetition('daily'); }} style={[styles.competition, competition === 'daily' && styles.competitionActive]}><View style={[styles.competitionIcon, competition === 'daily' && styles.competitionIconActive]}><Ionicons name="sunny-outline" size={17} color={competition === 'daily' ? colors.yellow : colors.muted} /></View><View><Text style={[styles.competitionText, competition === 'daily' && styles.competitionTextActive]}>Daily</Text><Text style={styles.competitionCaption}>Same rolls</Text></View></Pressable></View><View style={styles.controlDivider} /><View style={styles.periodRow}>{((competition === 'daily' ? ['today', 'week', 'month', 'all'] : ['week', 'month', 'all']) as Period[]).map((item) => <Pressable key={item} onPress={() => { setLoading(true); setPeriod(item); }} style={[styles.period, period === item && styles.periodActive]}><Text style={[styles.periodText, period === item && styles.periodTextActive]}>{item === 'today' ? 'Today' : item === 'week' ? 'Week' : item === 'month' ? 'Month' : 'All time'}</Text></Pressable>)}</View></>}
+        {mine && <><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyFilters}>{(['ALL', 'SOLO', 'DAILY', 'COMPUTER', 'PASS', 'REAL'] as const).map((item) => <Pressable key={item} onPress={() => setHistoryMode(item)} style={[styles.historyChip, historyMode === item && styles.periodActive]}><Text style={[styles.periodText, historyMode === item && styles.periodTextActive]}>{item === 'ALL' ? 'All games' : item === 'COMPUTER' ? 'Computer' : item === 'PASS' ? 'Pass & Play' : item === 'REAL' ? 'Real Dice' : item[0] + item.slice(1).toLowerCase()}</Text></Pressable>)}</ScrollView><View style={styles.periodRow}>{(['all', 'week', 'month'] as const).map((item) => <Pressable key={item} onPress={() => setHistoryDate(item)} style={[styles.period, historyDate === item && styles.periodActive]}><Text style={[styles.periodText, historyDate === item && styles.periodTextActive]}>{item === 'all' ? 'Any date' : item === 'week' ? 'Week' : 'Month'}</Text></Pressable>)}</View></>}
         <View style={styles.viewRow}><Text style={styles.viewLabel}>SHOWING</Text><View style={styles.filterRow}>
           <Pressable onPress={() => setMine(false)} style={[styles.filter, !mine && styles.filterActive]}><Ionicons name="earth-outline" size={13} color={!mine ? colors.cyan : colors.muted} /><Text style={[styles.filterText, !mine && styles.filterTextActive]}>Global</Text></Pressable>
           <Pressable onPress={user ? () => setMine(true) : onOpenAccount} style={[styles.filter, mine && styles.filterActive]}><Ionicons name="person-circle-outline" size={14} color={mine ? colors.cyan : colors.muted} /><Text style={[styles.filterText, mine && styles.filterTextActive]}>{user ? 'Mine' : 'Join'}</Text></Pressable>
         </View></View>
       </View>
+      {mine && historyScores.length > 0 && <View style={styles.modeStats}>{(['SOLO', 'DAILY', 'COMPUTER', 'PASS', 'REAL'] as ResultMode[]).map((mode) => { const games = historyScores.filter((score) => score.mode === mode); const owned = mode !== 'PASS' && mode !== 'REAL'; const average = games.length ? Math.round(games.reduce((sum, game) => sum + game.score, 0) / games.length) : 0; return <View key={mode} style={styles.modeStat}><Text style={styles.modeStatLabel}>{mode === 'COMPUTER' ? 'VS CPU' : mode === 'PASS' ? 'PASS & PLAY' : mode === 'REAL' ? 'REAL DICE' : mode}</Text><Text style={styles.modeStatValue}>{games.length} {games.length === 1 ? 'game' : 'games'}</Text><Text style={styles.modeStatMeta}>{owned && games.length ? `Best ${Math.max(...games.map((game) => game.score))} · Avg ${average}` : games.length ? 'Shared session' : 'No records'}</Text></View>; })}</View>}
       <View style={styles.freshness}><Text style={styles.freshnessText}>{loading ? 'Updating…' : lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Pull down to refresh'}</Text><Pressable disabled={loading} onPress={() => void load()} style={styles.refreshButton}><Ionicons name="refresh" size={13} color={colors.cyan} /><Text style={styles.refreshText}>Refresh</Text></Pressable></View>
       {loading && scores.length === 0 && <ActivityIndicator color={colors.cyan} size="large" />}
       {error ? <View style={styles.message}><Text style={styles.error}>{error}</Text><Pressable onPress={() => { setLoading(true); void load(); }}><Text style={styles.retry}>Try again</Text></Pressable></View> : null}
       {scores.map((item, index) => (
         <Pressable accessibilityRole="button" accessibilityHint="Shows score details" onPress={() => setSelected(item)} key={item.id} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
           <Text style={styles.rank}>{mine ? '•' : index + 1}</Text>
-          <View style={styles.player}><Text numberOfLines={1} style={styles.name}>{item.username}</Text><Text style={styles.rowMeta}>{competition === 'daily' ? item.aggregate ? 'Weekly total' : 'Daily Challenge' : 'Solo'}{item.completedAt ? ` · ${new Date(item.completedAt).toLocaleDateString()}` : ''}</Text></View>
+          <View style={styles.player}><Text numberOfLines={1} style={styles.name}>{item.username}</Text><Text style={styles.rowMeta}>{item.mode === 'DAILY' ? 'Daily Challenge' : item.mode === 'COMPUTER' ? 'Vs Computer' : item.mode === 'PASS' ? 'Pass & Play' : item.mode === 'REAL' ? 'Real Dice' : 'Solo'}{(item.completedAt ?? item.timestamp) ? ` · ${new Date(item.completedAt ?? item.timestamp).toLocaleDateString()}` : ''}</Text></View>
           <Text style={styles.score}>{item.score}</Text>
           <Ionicons name="chevron-forward" size={16} color={colors.muted} />
         </Pressable>
@@ -117,6 +126,8 @@ const styles = StyleSheet.create({
   content: { padding: 20, paddingBottom: 48 },
   intro: { color: colors.muted, fontSize: 12, lineHeight: 17, marginBottom: 12 }, controlPanel: { backgroundColor: colors.surface, borderColor: '#26383c', borderWidth: 1, borderRadius: 16, padding: 7, marginBottom: 18 }, competitionRow: { flexDirection: 'row', gap: 5 }, competition: { flex: 1, minHeight: 57, flexDirection: 'row', gap: 9, alignItems: 'center', paddingHorizontal: 11, borderRadius: 12, borderWidth: 1, borderColor: 'transparent' }, competitionActive: { backgroundColor: '#192528', borderColor: '#3a555a' }, competitionIcon: { width: 31, height: 31, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#182023' }, competitionIconActive: { backgroundColor: '#313514' }, competitionText: { color: colors.muted, fontWeight: '900', fontSize: 12 }, competitionTextActive: { color: colors.white }, competitionCaption: { color: colors.muted, fontSize: 8.5, marginTop: 1 }, controlDivider: { height: 1, backgroundColor: '#263438', marginHorizontal: 5, marginVertical: 7 },
   periodRow: { flexDirection: 'row', gap: 5, marginHorizontal: 4, marginBottom: 8 }, period: { flex: 1, minHeight: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, borderColor: '#315057', borderWidth: 1 }, periodActive: { backgroundColor: '#20383b', borderColor: colors.cyan }, periodText: { color: colors.muted, fontSize: 10, fontWeight: '800' }, periodTextActive: { color: colors.cyan },
+  historyFilters: { gap: 6, paddingHorizontal: 4, paddingBottom: 8 }, historyChip: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 16, borderColor: '#315057', borderWidth: 1 },
+  modeStats: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 14 }, modeStat: { width: '48%', backgroundColor: colors.surface, borderRadius: 11, padding: 10 }, modeStatLabel: { color: colors.muted, fontSize: 8, fontWeight: '900' }, modeStatValue: { color: colors.cyan, fontSize: 13, fontWeight: '900', marginTop: 3 }, modeStatMeta: { color: colors.mint, fontSize: 8.5, marginTop: 2 },
   viewRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 8 }, viewLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 1.1 }, filterRow: { flexDirection: 'row', gap: 3, backgroundColor: colors.background, padding: 3, borderRadius: 18 },
   filter: { minWidth: 82, minHeight: 30, paddingHorizontal: 10, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center', borderRadius: 15 }, filterActive: { backgroundColor: '#20383b' }, filterDisabled: { opacity: 0.4 },
   filterText: { color: colors.muted, fontSize: 10, fontWeight: '800' }, filterTextActive: { color: colors.cyan },

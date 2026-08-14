@@ -6,6 +6,8 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { categories, Category, ScoreEntry, totalScore, upperCategories, upperSectionBonus } from '../lib/game';
 import { colors, playerProfiles } from '../theme';
+import { useAuth } from '../state/AuthContext';
+import { createGameResult } from '../services/gameResults';
 
 const namesKey = 'yahtzee.real-dice.names.v1';
 const gameKey = 'yahtzee.real-dice.game.v1';
@@ -34,6 +36,7 @@ function validScore(category: Category, score: number) {
 }
 
 export function RealDiceScreen({ onOpenSettings }: { onOpenSettings?: () => void }) {
+  const { user } = useAuth();
   const [setupNames, setSetupNames] = useState(['', '']);
   const [players, setPlayers] = useState<RealPlayer[]>([]);
   const [currentPlayer, setCurrentPlayer] = useState(0);
@@ -42,6 +45,8 @@ export function RealDiceScreen({ onOpenSettings }: { onOpenSettings?: () => void
   const [showScorecard, setShowScorecard] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const setupScrollRef = useRef<ScrollView>(null);
+  const sessionId = useRef(`real:${Date.now()}`);
+  const recorded = useRef(false);
 
   useEffect(() => {
     void Promise.all([AsyncStorage.getItem(namesKey), AsyncStorage.getItem(gameKey)]).then(([savedNames, savedGame]) => {
@@ -68,6 +73,21 @@ export function RealDiceScreen({ onOpenSettings }: { onOpenSettings?: () => void
   const used = useMemo(() => new Set(active?.scores.map((entry) => entry.category) ?? []), [active]);
   const leaders = complete ? [...players].sort((a, b) => totalScore(b.scores) - totalScore(a.scores)) : [];
 
+  useEffect(() => {
+    if (!complete || !user || recorded.current) return;
+    recorded.current = true;
+    const owner = players[0];
+    const upper = owner.scores.filter((entry) => upperCategories.includes(entry.category)).reduce((sum, entry) => sum + entry.score, 0);
+    const card = Object.fromEntries(owner.scores.map((entry) => [entry.category, entry.score]));
+    void createGameResult({
+      id: sessionId.current, mode: 'REAL', modeDate: 'REAL#ALL', completedAt: new Date().toISOString(), score: totalScore(owner.scores),
+      yahtzeeCount: owner.scores.filter((entry) => entry.category === 'Yahtzee' && entry.score === 50).length,
+      earnedUpperBonus: upper >= 63, completedSmallStraight: card['Small Straight'] === 30, completedLargeStraight: card['Large Straight'] === 40,
+      noZeroScores: owner.scores.every((entry) => entry.score > 0), yahtzeeOnFinalRoll: false, scorecard: JSON.stringify(card),
+      session: JSON.stringify({ players: players.map((player) => ({ name: player.name, score: totalScore(player.scores), scorecard: Object.fromEntries(player.scores.map((entry) => [entry.category, entry.score])) })) }),
+    }).catch((error) => { recorded.current = false; console.error('[realDice.history]', error); });
+  }, [complete, players, user]);
+
   const changePlayerCount = (delta: number) => setSetupNames((current) => {
     const length = Math.max(1, Math.min(10, current.length + delta));
     return length > current.length ? [...current, `Player ${length}`] : current.slice(0, length);
@@ -76,6 +96,7 @@ export function RealDiceScreen({ onOpenSettings }: { onOpenSettings?: () => void
   const startGame = () => {
     const names = setupNames.map((name, index) => name.trim() || `Player ${index + 1}`);
     const nextPlayers = names.map((name, index) => ({ id: `${Date.now()}-${index}`, name, scores: [] }));
+    sessionId.current = `real:${Date.now()}`; recorded.current = false;
     setPlayers(nextPlayers); setCurrentPlayer(0); setSelectedCategory(null); setScoreText('');
     void AsyncStorage.setItem(namesKey, JSON.stringify(names));
     void AsyncStorage.setItem(gameKey, JSON.stringify({ players: nextPlayers, currentPlayer: 0 } satisfies SavedRealGame));
