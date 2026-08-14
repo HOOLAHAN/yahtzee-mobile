@@ -30,7 +30,7 @@ import { VirtualDiceScreen } from './VirtualDiceScreen';
 import { dailyDiceForThrow, localDateKey } from '../lib/dailyChallenge';
 import { resultMetrics } from '../lib/engagement';
 import { createGameResult, DailyRoundStanding, fetchDailyResults, GameResult, submitDailyRoundProgress } from '../services/gameResults';
-import { defaultDiceAnimation, DiceAnimation, diceAnimationOptions } from '../lib/diceAnimation';
+import { defaultDiceAnimation, DiceAnimation } from '../lib/diceAnimation';
 
 const initialDice: DieFace[] = [1, 1, 1, 1, 1];
 const storageKey = 'yahtzee.active-game.v1';
@@ -75,12 +75,11 @@ function PipFace({ value, small = false, preview = false }: { value: DieFace; sm
   return <View style={gridStyle}>{Array.from({ length: 9 }, (_, cell) => <View key={cell} style={cellStyle}>{pipCells[value].includes(cell) && <View style={pipStyle} />}</View>)}</View>;
 }
 
-function AnimationPreview({ animation, active, token }: { animation: DiceAnimation; active: boolean; token: number }) {
+export function AnimationPreview({ animation, active, token }: { animation: DiceAnimation; active: boolean; token: number }) {
   return <View style={styles.animationPreview}><AnimatedDie value={5} index={0} held={false} rollToken={active ? token : 0} canHold={false} reduceMotion={false} animation={animation} compact accentColor={colors.cyan} heldColor={colors.yellow} softColor={colors.background} onPress={() => undefined} /></View>;
 }
 
-function GameModeChooser({ onChange, diceAnimation, onDiceAnimationChange }: { onChange: (mode: GameMode) => void; diceAnimation: DiceAnimation; onDiceAnimationChange: (animation: DiceAnimation) => void }) {
-  const [previewToken, setPreviewToken] = useState(0);
+function GameModeChooser({ onChange }: { onChange: (mode: GameMode) => void }) {
   const gameOptions: { mode: GameMode; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { mode: 'solo', label: 'Solo', description: 'Play a classic game at your own pace and submit your final score.', icon: 'person-outline' },
     { mode: 'daily', label: 'Daily Challenge', description: 'Play today’s fixed roll sequence. Everyone gets the same candidate dice each roll; your holds and scoring choices decide the result.', icon: 'sunny-outline' },
@@ -92,8 +91,7 @@ function GameModeChooser({ onChange, diceAnimation, onDiceAnimationChange }: { o
     { mode: 'real', label: 'Scorecard', description: 'Use physical dice while the app manages every player.', icon: 'calculator-outline' },
   ];
   const choice = (option: typeof gameOptions[number], tool = false) => <Pressable key={option.mode} accessibilityRole="button" onPress={() => onChange(option.mode)} style={({ pressed }) => [styles.gameChoice, tool && styles.toolChoice, pressed && styles.choicePressed]}><View style={[styles.choiceIcon, tool && styles.toolIcon]}><Ionicons name={option.icon} size={23} color={tool ? colors.yellow : colors.cyan} /></View><View style={styles.choiceCopy}><Text style={styles.choiceTitle}>{option.label}</Text><Text style={styles.choiceDescription}>{option.description}</Text></View><View style={[styles.choiceArrow, tool && styles.toolArrow]}><Ionicons name="arrow-forward" size={18} color={tool ? colors.background : colors.cyan} /></View></Pressable>;
-  const chooseAnimation = (animation: DiceAnimation) => { onDiceAnimationChange(animation); setPreviewToken((token) => token + 1); void Haptics.selectionAsync(); };
-  return <ScrollView contentContainerStyle={styles.chooserContent} showsVerticalScrollIndicator={false}><Text style={styles.chooserEyebrow}>Game settings</Text><Text style={styles.chooserTitle}>Choose how to play</Text><Text style={styles.chooserIntro}>Start a Yahtzee game or open a tool for your physical dice.</Text><Text style={styles.chooserSection}>Play Yahtzee</Text><View style={styles.choiceList}>{gameOptions.map((option) => choice(option))}</View><Text style={styles.chooserSection}>Dice tools</Text><View style={styles.choiceList}>{tools.map((option) => choice(option, true))}</View><Text style={styles.chooserSection}>Dice animation</Text><Text style={styles.animationIntro}>Choose how your dice move. Tap an option to preview it.</Text><View style={styles.animationGrid}>{diceAnimationOptions.map((option) => { const selected = diceAnimation === option.value; return <Pressable key={option.value} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => chooseAnimation(option.value)} style={({ pressed }) => [styles.animationChoice, selected && styles.animationChoiceSelected, pressed && styles.choicePressed]}><AnimationPreview animation={option.value} active={selected} token={previewToken} /><View style={styles.animationCopy}><Text style={[styles.animationTitle, selected && styles.animationTitleSelected]}>{option.label}</Text><Text style={styles.animationDescription}>{option.description}</Text></View>{selected && <Ionicons name="checkmark-circle" size={20} color={colors.cyan} />}</Pressable>; })}</View></ScrollView>;
+  return <ScrollView contentContainerStyle={styles.chooserContent} showsVerticalScrollIndicator={false}><Text style={styles.chooserEyebrow}>Game selection</Text><Text style={styles.chooserTitle}>Choose how to play</Text><Text style={styles.chooserIntro}>Start a Yahtzee game or open a tool for your physical dice.</Text><Text style={styles.chooserSection}>Play Yahtzee</Text><View style={styles.choiceList}>{gameOptions.map((option) => choice(option))}</View><Text style={styles.chooserSection}>Dice tools</Text><View style={styles.choiceList}>{tools.map((option) => choice(option, true))}</View></ScrollView>;
 }
 
 function AnimatedDie({ value, index, held, rollToken, canHold, reduceMotion, resetPosition = false, animation = defaultDiceAnimation, compact = false, accentColor, heldColor, softColor, onPress }: {
@@ -231,9 +229,9 @@ function computerCategory(dice: DieFace[], used: Set<Category>, entries: ScoreEn
   return available.reduce((best, category) => computerCategoryValue(category, dice, entries) > computerCategoryValue(best, dice, entries) ? category : best);
 }
 
-interface GameScreenProps { chooserRequest?: number; resumeRequest?: number; dailyLaunchRequest?: number; onHeaderTitleChange?: (title: string) => void; onPlayNavigationChange?: (canContinue: boolean, settingsOpen: boolean) => void; scoreSuggestionsEnabled?: boolean; diceAnimation?: DiceAnimation; onDiceAnimationChange?: (animation: DiceAnimation) => void; remindersEnabled?: boolean; onRequestReminders?: () => void; onDailyCompleted?: () => void; onOpenAccount?: (createAccount?: boolean) => void }
+interface GameScreenProps { chooserRequest?: number; resumeRequest?: number; dailyLaunchRequest?: number; onHeaderTitleChange?: (title: string) => void; onPlayNavigationChange?: (canContinue: boolean, chooserOpen: boolean) => void; scoreSuggestionsEnabled?: boolean; diceAnimation?: DiceAnimation; remindersEnabled?: boolean; onRequestReminders?: () => void; onDailyCompleted?: () => void; onOpenAccount?: (createAccount?: boolean) => void }
 
-export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchRequest = 0, onHeaderTitleChange, onPlayNavigationChange, scoreSuggestionsEnabled = true, diceAnimation = defaultDiceAnimation, onDiceAnimationChange = () => undefined, remindersEnabled = false, onRequestReminders, onDailyCompleted, onOpenAccount }: GameScreenProps) {
+export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchRequest = 0, onHeaderTitleChange, onPlayNavigationChange, scoreSuggestionsEnabled = true, diceAnimation = defaultDiceAnimation, remindersEnabled = false, onRequestReminders, onDailyCompleted, onOpenAccount }: GameScreenProps) {
   const { user } = useAuth();
   const [twoPlayer, setTwoPlayer] = useState(false);
   const [computerOpponent, setComputerOpponent] = useState(false);
@@ -692,7 +690,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   </>;
   };
 
-  if (showModeChooser) return <GameModeChooser onChange={changeMode} diceAnimation={diceAnimation} onDiceAnimationChange={onDiceAnimationChange} />;
+  if (showModeChooser) return <GameModeChooser onChange={changeMode} />;
   if (scorekeeperMode) return <View style={styles.gameContainer}><RealDiceScreen onOpenSettings={() => setShowModeChooser(true)} /></View>;
   if (virtualDiceMode) return <View style={styles.gameContainer}><VirtualDiceScreen diceAnimation={diceAnimation} onOpenSettings={() => setShowModeChooser(true)} /></View>;
 
@@ -745,7 +743,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
         })}</View>
         <View style={styles.actions}>
           <Pressable accessibilityRole="button" accessibilityLabel="Open scorecard" onPress={() => setShowScorecard(true)} style={[styles.gameActionButton, { borderColor: currentProfile.accent }]}><Ionicons name="list-outline" size={18} color={currentProfile.accent} /><Text style={[styles.gameActionText, { color: currentProfile.accent }]}>Scorecard</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel="Open game settings" onPress={() => setShowModeChooser(true)} style={styles.gameActionButton}><Ionicons name="settings-outline" size={18} color={colors.mint} /><Text style={styles.gameActionText}>Settings</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="Choose another game" onPress={() => setShowModeChooser(true)} style={styles.gameActionButton}><Ionicons name="grid-outline" size={18} color={colors.mint} /><Text style={styles.gameActionText}>Choose game</Text></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel={dailyMode ? 'Daily Challenge restart protection' : 'Reset game'} onPress={dailyMode ? dailyResetInfo : reset} style={[styles.gameActionButton, dailyMode && styles.protectedAction]}><Ionicons name={dailyMode ? 'shield-checkmark-outline' : 'refresh-outline'} size={18} color={dailyMode ? colors.yellow : colors.muted} /><Text style={[styles.gameActionText, dailyMode ? styles.protectedActionText : styles.resetText]}>{dailyMode ? 'Protected' : 'Reset'}</Text></Pressable>
         </View>
       </>}

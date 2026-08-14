@@ -114,7 +114,7 @@ export function LeaderboardScreen({ onOpenAccount }: { onOpenAccount?: () => voi
       else {
         const next = value as Competition;
         setCompetition(next);
-        if (next === 'solo' && period === 'today') setPeriod('week');
+        setPeriod(next === 'daily' ? 'today' : period === 'today' ? 'week' : period);
       }
     } else if (mine) setHistoryDate(value as 'all' | 'week' | 'month');
     else setPeriod(value as Period);
