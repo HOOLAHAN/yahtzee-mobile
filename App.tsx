@@ -28,8 +28,8 @@ const arcadeModeKey = 'yahtzee.arcade-font.v1';
 const scanlines = Array.from({ length: 28 }, (_, index) => index);
 
 const tabs: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'stats', label: 'Stats', icon: 'stats-chart-outline', activeIcon: 'stats-chart' },
   { key: 'game', label: 'Play', icon: 'dice-outline', activeIcon: 'dice' },
+  { key: 'stats', label: 'Stats', icon: 'stats-chart-outline', activeIcon: 'stats-chart' },
   { key: 'account', label: 'Account', icon: 'person-outline', activeIcon: 'person' },
   { key: 'about', label: 'About', icon: 'information-circle-outline', activeIcon: 'information-circle' },
 ];
