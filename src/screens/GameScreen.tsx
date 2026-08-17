@@ -49,6 +49,7 @@ type Histories = Record<Player, ScoreEntry[]>;
 type GameMode = 'solo' | 'daily' | 'computer' | 'pass' | 'virtual' | 'real';
 
 interface PersistedGame {
+  ownerKey?: string;
   twoPlayer: boolean;
   computerOpponent?: boolean;
   scorekeeperMode?: boolean;
@@ -273,6 +274,9 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   const [toastMessage, setToastMessage] = useState('');
   const [holdTipSeen, setHoldTipSeen] = useState(true);
   const computerTurnRunning = useRef(false);
+  const dailyPlayerKey = user?.userId ?? 'guest';
+  const previousDailyPlayerKey = useRef(dailyPlayerKey);
+  const [gameOwnerKey, setGameOwnerKey] = useState(dailyPlayerKey);
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastY = useRef(new Animated.Value(16)).current;
 
@@ -308,10 +312,15 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   useEffect(() => {
     if (!dailyMode) { setDailyAlreadyCompleted(false); return; }
     let cancelled = false;
-    const completionKey = `yahtzee.daily.completed.${dailyDate}.${user?.userId ?? 'guest'}`;
+    const completionKey = `yahtzee.daily.completed.${dailyDate}.${dailyPlayerKey}`;
     const checkCompletion = async () => {
       const completedOnDevice = await AsyncStorage.getItem(completionKey);
-      if (!cancelled && completedOnDevice === 'true') setDailyAlreadyCompleted(true);
+      if (!cancelled) {
+        setDailyAlreadyCompleted(completedOnDevice === 'true');
+        setDailyCompletedResult(null);
+        setDailyCompletedRank(0);
+        setCheckingDailyCompletion(false);
+      }
       if (!user) return;
       setCheckingDailyCompletion(true);
       try {
@@ -328,7 +337,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
     };
     void checkCompletion();
     return () => { cancelled = true; };
-  }, [dailyDate, dailyMode, user]);
+  }, [dailyDate, dailyMode, dailyPlayerKey, user]);
 
   useEffect(() => {
     if (!dailyMode || !complete) return;
@@ -336,8 +345,11 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
     // saving the result are asynchronous, so the UI must not expose a reset
     // path while either operation is still in flight.
     setDailyAlreadyCompleted(true);
-    void AsyncStorage.setItem(`yahtzee.daily.completed.${dailyDate}.${user?.userId ?? 'guest'}`, 'true').then(() => onDailyCompleted?.());
-  }, [complete, dailyDate, dailyMode, onDailyCompleted, user?.userId]);
+    void AsyncStorage.setItem(`yahtzee.daily.completed.${dailyDate}.${dailyPlayerKey}`, 'true').then(() => onDailyCompleted?.());
+    // A finished game stays owned by the account that completed it. Logging in
+    // as someone else must not mark that new account as completed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complete, dailyDate, dailyMode, onDailyCompleted]);
 
   useEffect(() => {
     const round = histories[1].length;
@@ -363,16 +375,18 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       if (saved.dailyMode && saved.dailyDate !== today) { setDailyMode(true); setDailyDate(today); return; }
       setTwoPlayer(Boolean(saved.twoPlayer)); setComputerOpponent(Boolean(saved.computerOpponent)); setScorekeeperMode(Boolean(saved.scorekeeperMode)); setVirtualDiceMode(Boolean(saved.virtualDiceMode)); setDailyMode(Boolean(saved.dailyMode)); setHasActiveMode(true); setDailyDate(saved.dailyDate || today); setDailyThrowIndex(saved.dailyThrowIndex ?? 0); setProgressRecorded(Boolean(saved.progressRecorded)); setYahtzeeOnFinalRoll(Boolean(saved.yahtzeeOnFinalRoll)); setCurrentPlayer(saved.currentPlayer === 2 ? 2 : 1); setViewingPlayer(saved.currentPlayer === 2 ? 2 : 1);
       setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories(saved.histories); setSubmitted(Boolean(saved.submitted)); setQueued(Boolean(saved.queued));
+      setGameOwnerKey(saved.ownerKey ?? dailyPlayerKey);
       if (saved.gameId) setGameId(saved.gameId);
     }).catch(() => undefined).finally(() => setHydrated(true));
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
-    const state: PersistedGame = { twoPlayer, computerOpponent, scorekeeperMode, virtualDiceMode, dailyMode, dailyDate, dailyThrowIndex, progressRecorded, yahtzeeOnFinalRoll, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, queued, gameId };
+    if (gameOwnerKey !== dailyPlayerKey) return;
+    const state: PersistedGame = { ownerKey: gameOwnerKey, twoPlayer, computerOpponent, scorekeeperMode, virtualDiceMode, dailyMode, dailyDate, dailyThrowIndex, progressRecorded, yahtzeeOnFinalRoll, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, queued, gameId };
     void AsyncStorage.setItem(storageKey, JSON.stringify(state));
     if (dailyMode) void AsyncStorage.setItem(dailyAttemptKey(dailyDate, user?.userId), JSON.stringify(state));
-  }, [computerOpponent, currentPlayer, dailyDate, dailyMode, dailyThrowIndex, dice, gameId, hasRolled, held, histories, hydrated, progressRecorded, queued, rollsLeft, scorekeeperMode, submitted, twoPlayer, user?.userId, virtualDiceMode, yahtzeeOnFinalRoll]);
+  }, [computerOpponent, currentPlayer, dailyDate, dailyMode, dailyPlayerKey, dailyThrowIndex, dice, gameId, gameOwnerKey, hasRolled, held, histories, hydrated, progressRecorded, queued, rollsLeft, scorekeeperMode, submitted, twoPlayer, virtualDiceMode, yahtzeeOnFinalRoll]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -388,7 +402,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   }, [gameId, hydrated, queued]);
 
   useEffect(() => {
-    if (!hydrated || !complete || progressRecorded || !user) return;
+    if (!hydrated || !complete || progressRecorded || !user || gameOwnerKey !== dailyPlayerKey) return;
     const metrics = resultMetrics(histories[1]);
     const mode = dailyMode ? 'DAILY' : computerOpponent ? 'COMPUTER' : twoPlayer ? 'PASS' : 'SOLO';
     const session = twoPlayer && !computerOpponent ? JSON.stringify({ players: [
@@ -418,7 +432,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       if (dailyMode && /ConditionalCheckFailed|conditional request|already exists/i.test(message)) setProgressRecorded(true);
       else console.error('[gameResults.create]', error);
     });
-  }, [complete, computerOpponent, dailyDate, dailyMode, gameId, histories, hydrated, progressRecorded, twoPlayer, user, yahtzeeOnFinalRoll]);
+  }, [complete, computerOpponent, dailyDate, dailyMode, dailyPlayerKey, gameId, gameOwnerKey, histories, hydrated, progressRecorded, twoPlayer, user, yahtzeeOnFinalRoll]);
 
   useEffect(() => {
     void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
@@ -556,7 +570,16 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
     setHistories({ 1: [], 2: [] }); setCurrentPlayer(startingPlayer); setViewingPlayer(startingPlayer); setDice(initialDice); setHeld(new Set());
     setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setSubmitted(false); setQueued(false); setShowScorecard(false); setDailyThrowIndex(0); setDailyDate(localDateKey()); setProgressRecorded(false); setYahtzeeOnFinalRoll(false); setDailyStanding(''); setDailyRoundStanding(null); setDailyStandingLoading(false);
     setGameId(`mobile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
+    setGameOwnerKey(dailyPlayerKey);
   };
+
+  useEffect(() => {
+    if (previousDailyPlayerKey.current === dailyPlayerKey) return;
+    previousDailyPlayerKey.current = dailyPlayerKey;
+    if (dailyMode) clearGame();
+    // Daily progress and its completion UI belong to one account only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dailyMode, dailyPlayerKey]);
 
   const reset = () => Alert.alert('Reset game?', 'All scores from this game will be lost.', [
     { text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: clearGame },
@@ -565,7 +588,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   const dailyResetInfo = () => Alert.alert('Daily Challenge protected', 'Today’s challenge can only be attempted once. Choose another game if you want a break; your exact progress will be waiting when you return.');
   const applyMode = async (mode: GameMode) => {
     if (dailyMode && !complete) {
-      const current: PersistedGame = { twoPlayer, computerOpponent, scorekeeperMode, virtualDiceMode, dailyMode, dailyDate, dailyThrowIndex, progressRecorded, yahtzeeOnFinalRoll, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, queued, gameId };
+      const current: PersistedGame = { ownerKey: gameOwnerKey, twoPlayer, computerOpponent, scorekeeperMode, virtualDiceMode, dailyMode, dailyDate, dailyThrowIndex, progressRecorded, yahtzeeOnFinalRoll, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, queued, gameId };
       await AsyncStorage.setItem(dailyAttemptKey(dailyDate, user?.userId), JSON.stringify(current));
     }
     const today = localDateKey();
@@ -581,6 +604,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
     const startingPlayer: Player = mode === 'computer' ? 2 : 1;
     setCurrentPlayer(startingPlayer); setViewingPlayer(startingPlayer);
     if (saved) {
+      setGameOwnerKey(dailyPlayerKey);
       setDailyDate(today); setDailyThrowIndex(saved.dailyThrowIndex ?? 0); setProgressRecorded(Boolean(saved.progressRecorded)); setYahtzeeOnFinalRoll(Boolean(saved.yahtzeeOnFinalRoll));
       setCurrentPlayer(1); setViewingPlayer(1); setDice(saved.dice); setHeld(new Set(saved.held ?? [])); setRollsLeft(saved.rollsLeft); setHasRolled(Boolean(saved.hasRolled)); setHistories({ 1: saved.histories[1] ?? [], 2: [] }); setSubmitted(Boolean(saved.submitted)); setQueued(Boolean(saved.queued));
       if (saved.gameId) setGameId(saved.gameId);
@@ -663,12 +687,12 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
 
   useEffect(() => {
     const leaderboardEligible = !dailyMode && !twoPlayer;
-    if (!hydrated || !complete || !leaderboardEligible || !user || submitting || submitted || queued) return;
+    if (!hydrated || !complete || !leaderboardEligible || !user || gameOwnerKey !== dailyPlayerKey || submitting || submitted || queued) return;
     void sendScore();
     // sendScore intentionally runs once for this persisted game ID. Its status
     // flags prevent re-renders from creating another submission.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complete, computerOpponent, dailyMode, gameId, hydrated, queued, submitted, submitting, twoPlayer, user]);
+  }, [complete, computerOpponent, dailyMode, dailyPlayerKey, gameId, gameOwnerKey, hydrated, queued, submitted, submitting, twoPlayer, user]);
 
   const winner = twoPlayer && complete ? totals[1] === totals[2] ? 'Draw game' : totals[1] > totals[2] ? 'Player 1 wins' : computerOpponent ? 'Computer wins' : 'Player 2 wins' : 'Game complete';
 
