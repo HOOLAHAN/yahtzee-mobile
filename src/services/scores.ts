@@ -41,7 +41,7 @@ export async function fetchLeaderboard() {
   if (!('data' in result)) throw new Error('Unable to load scores.');
   return (result.data.listScores.items.filter(Boolean) as LeaderboardScore[])
     .sort((a, b) => b.score - a.score)
-    .slice(0, 10);
+    .slice(0, 100);
 }
 
 export async function fetchUserScores(userId: string) {

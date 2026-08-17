@@ -15,6 +15,16 @@ const scoreLabels: Record<string, string> = { Ones: 'Ones', Twos: 'Twos', Threes
 const upperCategories = ['Ones', 'Twos', 'Threes', 'Fours', 'Fives', 'Sixes'];
 const lowerCategories = ['Three of a Kind', 'Four of a Kind', 'Full House', 'Small Straight', 'Large Straight', 'Yahtzee', 'Chance'];
 const readScorecard = (value?: string) => { if (!value) return null; try { return JSON.parse(value) as Record<string, number>; } catch { return null; } };
+const highestScorePerUser = (entries: LeaderboardEntry[]) => {
+  const best = new Map<string, LeaderboardEntry>();
+  entries.forEach((entry) => {
+    const current = best.get(entry.userId);
+    const entryTime = new Date(entry.completedAt ?? entry.timestamp).getTime();
+    const currentTime = current ? new Date(current.completedAt ?? current.timestamp).getTime() : 0;
+    if (!current || entry.score > current.score || (entry.score === current.score && entryTime > currentTime)) best.set(entry.userId, entry);
+  });
+  return [...best.values()].sort((a, b) => b.score - a.score).slice(0, 100);
+};
 function ScorecardBreakdown({ value }: { value?: string }) {
   const card = readScorecard(value); if (!card) return null;
   const upper = upperCategories.reduce((sum, key) => sum + (card[key] ?? 0), 0); const bonus = upper >= 63 ? 35 : 0;
@@ -78,10 +88,10 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
         ]);
         const indexed = details.filter((result) => result.mode === 'SOLO').map((result) => ({ ...result, timestamp: result.completedAt } as LeaderboardEntry));
         const indexedIds = new Set(indexed.map((result) => result.id));
-        setScores(filterResultsByPeriod([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))], period).sort((a, b) => b.score - a.score).slice(0, 100));
+        setScores(highestScorePerUser(filterResultsByPeriod([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))], period)));
       } else {
         const daily = period === 'today' ? await fetchDailyResults(localDateKey()) : filterResultsByPeriod(await fetchAllDailyResults(1000), period);
-        setScores([...daily].sort((a, b) => b.score - a.score).slice(0, 100) as LeaderboardEntry[]);
+        setScores(highestScorePerUser(daily as LeaderboardEntry[]));
       }
       setLastUpdated(new Date());
     }
