@@ -425,7 +425,12 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       if (dailyMode) {
         const board = await fetchDailyResults(dailyDate);
         const rank = board.findIndex((result) => result.userId === savedResult.userId) + 1;
-        if (rank > 0) setDailyStanding(`#${rank} today · Top ${Math.max(1, Math.ceil((rank / board.length) * 100))}%`);
+        if (rank > 0) {
+          const position = board.length < 5
+            ? `#${rank} of ${board.length} today`
+            : `#${rank} today · Top ${Math.max(1, Math.ceil((rank / board.length) * 100))}%`;
+          setDailyStanding(position);
+        }
       }
     }).catch((error) => {
       const message = error instanceof Error ? error.message : 'Progress could not be saved.';
