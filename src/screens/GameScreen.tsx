@@ -22,7 +22,7 @@ import {
   upperSectionBonus,
   upperSectionSubtotal,
 } from '../lib/game';
-import { submitScore } from '../services/scores';
+import { fetchLeaderboard, submitScore } from '../services/scores';
 import { isRetryableScoreError, isScorePending, queueScore, subscribeToPendingScores } from '../services/pendingScores';
 import { useAuth } from '../state/AuthContext';
 import { colors, computerProfile, dailyProfile, playerProfiles } from '../theme';
@@ -272,6 +272,8 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   const [reduceMotion, setReduceMotion] = useState(false);
   const [rollToken, setRollToken] = useState(0);
   const [toastMessage, setToastMessage] = useState('');
+  const [toastKind, setToastKind] = useState<'standard' | 'achievement'>('standard');
+  const [toastTitle, setToastTitle] = useState('TOP 3!');
   const [holdTipSeen, setHoldTipSeen] = useState(true);
   const computerTurnRunning = useRef(false);
   const dailyPlayerKey = user?.userId ?? 'guest';
@@ -279,6 +281,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   const [gameOwnerKey, setGameOwnerKey] = useState(dailyPlayerKey);
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastY = useRef(new Animated.Value(16)).current;
+  const toastScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => { setShowModeChooser(true); }, [chooserRequest]);
   useEffect(() => { if (resumeRequest && hasActiveMode) setShowModeChooser(false); }, [hasActiveMode, resumeRequest]);
@@ -430,6 +433,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
             ? `#${rank} of ${board.length} today`
             : `#${rank} today · Top ${Math.max(1, Math.ceil((rank / board.length) * 100))}%`;
           setDailyStanding(position);
+          if (rank <= 3 && board.length >= 5) showToast(`Your ${savedResult.score} points reached #${rank} on today's Daily Challenge.`, 'achievement', `DAILY #${rank}!`);
         }
       }
     }).catch((error) => {
@@ -445,15 +449,17 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
     return () => subscription.remove();
   }, []);
 
-  const showToast = (message: string) => {
-    setToastMessage(message); toastAnimation.current?.stop(); toastOpacity.setValue(0); toastY.setValue(16);
+  const showToast = (message: string, kind: 'standard' | 'achievement' = 'standard', title = 'TOP 3!') => {
+    setToastMessage(message); setToastKind(kind); setToastTitle(title); toastAnimation.current?.stop(); toastOpacity.setValue(0); toastY.setValue(16); toastScale.setValue(kind === 'achievement' ? 0.86 : 1);
+    if (kind === 'achievement') void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     if (reduceMotion) {
       toastOpacity.setValue(1);
-      toastAnimation.current = Animated.sequence([Animated.delay(1300), Animated.timing(toastOpacity, { toValue: 0, duration: 1, useNativeDriver: true })]);
+      toastScale.setValue(1);
+      toastAnimation.current = Animated.sequence([Animated.delay(kind === 'achievement' ? 3000 : 1300), Animated.timing(toastOpacity, { toValue: 0, duration: 1, useNativeDriver: true })]);
     } else {
       toastAnimation.current = Animated.sequence([
-        Animated.parallel([Animated.timing(toastOpacity, { toValue: 1, duration: 180, useNativeDriver: true }), Animated.spring(toastY, { toValue: 0, speed: 18, bounciness: 7, useNativeDriver: true })]),
-        Animated.delay(1450),
+        Animated.parallel([Animated.timing(toastOpacity, { toValue: 1, duration: 180, useNativeDriver: true }), Animated.spring(toastY, { toValue: 0, speed: 18, bounciness: kind === 'achievement' ? 14 : 7, useNativeDriver: true }), Animated.spring(toastScale, { toValue: 1, speed: 16, bounciness: kind === 'achievement' ? 16 : 0, useNativeDriver: true })]),
+        Animated.delay(kind === 'achievement' ? 3000 : 1450),
         Animated.parallel([Animated.timing(toastOpacity, { toValue: 0, duration: 220, useNativeDriver: true }), Animated.timing(toastY, { toValue: 12, duration: 220, useNativeDriver: true })]),
       ]);
     }
@@ -677,7 +683,18 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       }
       await submitScore(gameId, totals[1], user.userId);
       setSubmitted(true);
-      showToast(`${totals[1]} points submitted to the leaderboard`);
+      try {
+        const leaderboard = await fetchLeaderboard();
+        const bestByUser = new Map<string, number>();
+        leaderboard.forEach((entry) => bestByUser.set(entry.userId, Math.max(entry.score, bestByUser.get(entry.userId) ?? 0)));
+        const rankedUsers = [...bestByUser.entries()].sort((a, b) => b[1] - a[1]);
+        const rank = rankedUsers.findIndex(([userId]) => userId === user.userId) + 1;
+        if (rank > 0 && rank <= 3) showToast(`Your ${totals[1]} points reached #${rank} on the Solo leaderboard.`, 'achievement', `SOLO #${rank}!`);
+        else showToast(`${totals[1]} points submitted to the leaderboard`);
+      } catch {
+        // The score is already safely committed; a rank refresh is optional.
+        showToast(`${totals[1]} points submitted to the leaderboard`);
+      }
     } catch (error) {
       if (isRetryableScoreError(error)) {
         await queueScore({ id: gameId, score: totals[1], userId: user.userId });
@@ -700,6 +717,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   }, [complete, computerOpponent, dailyMode, dailyPlayerKey, gameId, gameOwnerKey, hydrated, queued, submitted, submitting, twoPlayer, user]);
 
   const winner = twoPlayer && complete ? totals[1] === totals[2] ? 'Draw game' : totals[1] > totals[2] ? 'Player 1 wins' : computerOpponent ? 'Computer wins' : 'Player 2 wins' : 'Game complete';
+  const toastView = <Animated.View accessibilityLiveRegion="polite" pointerEvents="none" style={[styles.toast, toastKind === 'achievement' && styles.achievementToast, { opacity: toastOpacity, transform: [{ translateY: toastY }, { scale: toastScale }] }]}><View style={toastKind === 'achievement' ? styles.achievementToastIcon : undefined}><Ionicons name={toastKind === 'achievement' ? 'trophy' : 'checkmark-circle'} size={toastKind === 'achievement' ? 28 : 22} color={toastKind === 'achievement' ? colors.yellow : colors.background} /></View><View style={styles.toastCopy}>{toastKind === 'achievement' && <Text style={styles.achievementToastTitle}>{toastTitle}</Text>}<Text style={[styles.toastText, toastKind === 'achievement' && styles.achievementToastText]}>{toastMessage}</Text></View>{toastKind === 'achievement' && <Ionicons name="sparkles" size={22} color={colors.pink} />}</Animated.View>;
 
   if (!showModeChooser && dailyMode && (checkingDailyCompletion || dailyAlreadyCompleted) && !complete) return <View style={styles.gameContainer}><View style={styles.dailyCompleteCard}><View style={styles.dailyCompleteIcon}><Ionicons name={checkingDailyCompletion ? 'sync-outline' : 'lock-closed'} size={28} color={colors.yellow} /></View><Text style={styles.dailyCompleteEyebrow}>DAILY CHALLENGE · {dailyDate}</Text><Text style={styles.dailyCompleteTitle}>{checkingDailyCompletion ? 'Checking today’s result…' : 'Challenge completed'}</Text>{dailyCompletedResult && <View style={styles.dailyResultPanel}><View style={styles.dailyResultPrimary}><Text style={styles.dailyResultLabel}>YOUR SCORE</Text><Text style={styles.dailyResultScore}>{dailyCompletedResult.score}</Text></View><View style={styles.dailyResultDivider} /><View style={styles.dailyResultItem}><Text style={styles.dailyResultLabel}>TODAY</Text><Text style={styles.dailyResultValue}>#{dailyCompletedRank}</Text></View><View style={styles.dailyResultDivider} /><View style={styles.dailyResultItem}><Text style={styles.dailyResultLabel}>YAHTZEES</Text><Text style={styles.dailyResultValue}>{dailyCompletedResult.yahtzeeCount ?? 0}</Text></View></View>}<Text style={styles.dailyCompleteCopy}>{checkingDailyCompletion ? 'Making sure this account has not already played today.' : dailyCompletedResult?.earnedUpperBonus ? 'You earned the upper-section bonus. Come back tomorrow for a new sequence.' : 'Come back tomorrow for a new fixed-roll sequence.'}</Text>{!checkingDailyCompletion && <><Pressable onPress={onOpenDailyLeaderboard} style={styles.dailyLeaderboardButton}><Ionicons name="trophy-outline" size={18} color={colors.yellow} /><Text style={styles.dailyLeaderboardButtonText}>View today’s leaderboard</Text><Ionicons name="chevron-forward" size={17} color={colors.yellow} /></Pressable><Pressable onPress={() => setShowModeChooser(true)} style={styles.dailyCompleteButton}><Ionicons name="grid-outline" size={18} color={colors.cyan} /><Text style={styles.dailyCompleteButtonText}>Choose another game</Text></Pressable></>}</View></View>;
 
@@ -727,7 +745,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   if (virtualDiceMode) return <View style={styles.gameContainer}><VirtualDiceScreen diceAnimation={diceAnimation} onOpenSettings={() => setShowModeChooser(true)} /></View>;
 
   return <View style={styles.gameContainer}>
-    <Animated.View accessibilityLiveRegion="polite" pointerEvents="none" style={[styles.toast, { opacity: toastOpacity, transform: [{ translateY: toastY }] }]}><Ionicons name="checkmark-circle" size={22} color={colors.background} /><Text style={styles.toastText}>{toastMessage}</Text></Animated.View>
+    {toastView}
 
     <View style={[styles.turnControls, dailyMode && styles.dailyTurnControls]}>
       <View style={styles.turnHeadingRow}><View><Text style={[styles.title, { color: currentProfile.score }]}>{isComputerTurn ? "Computer's turn" : computerOpponent || dailyMode || !twoPlayer ? 'Your turn' : `Player ${currentPlayer}'s turn`}</Text><Text style={styles.progress}>{dailyMode ? `${dailyDate} · ` : ''}Round {currentRound} of {categories.length}</Text></View>{isComputerTurn && <View style={[styles.computerBadge, { backgroundColor: computerProfile.soft }]}><Ionicons name="hardware-chip-outline" size={13} color={computerProfile.accent} /><Text style={[styles.computerBadgeText, { color: computerProfile.accent }]}>Thinking</Text></View>}</View>
@@ -800,7 +818,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
 const styles = StyleSheet.create({
   gameContainer: { flex: 1 }, content: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 20 }, contentWithLock: { paddingBottom: 105 },
   dailyCompleteCard: { flex: 1, margin: 18, padding: 24, alignItems: 'center', justifyContent: 'center', borderRadius: 20, borderColor: '#315a5e', borderWidth: 1, backgroundColor: colors.surface }, dailyCompleteIcon: { width: 60, height: 60, borderRadius: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: '#313514' }, dailyCompleteEyebrow: { color: colors.pink, fontSize: 10, fontWeight: '900', letterSpacing: 1.1, marginTop: 18 }, dailyCompleteTitle: { color: colors.yellow, fontSize: 24, fontWeight: '900', textAlign: 'center', marginTop: 5 }, dailyResultPanel: { width: '100%', maxWidth: 350, minHeight: 80, flexDirection: 'row', alignItems: 'center', marginTop: 18, paddingVertical: 10, borderRadius: 14, borderColor: '#26383c', borderWidth: 1, backgroundColor: colors.background }, dailyResultPrimary: { flex: 1.25, alignItems: 'center' }, dailyResultItem: { flex: 1, alignItems: 'center' }, dailyResultDivider: { width: 1, height: 42, backgroundColor: '#2d3c40' }, dailyResultLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: .8 }, dailyResultScore: { color: colors.yellow, fontSize: 27, fontWeight: '900', marginTop: 2 }, dailyResultValue: { color: colors.cyan, fontSize: 19, fontWeight: '900', marginTop: 4 }, dailyCompleteCopy: { maxWidth: 330, color: colors.mint, fontSize: 13, lineHeight: 20, textAlign: 'center', marginTop: 12 }, dailyCompleteButton: { flexDirection: 'row', alignItems: 'center', gap: 7, borderColor: colors.cyan, borderWidth: 1, borderRadius: 11, paddingHorizontal: 15, paddingVertical: 12, marginTop: 20 }, dailyCompleteButtonText: { color: colors.cyan, fontWeight: '900' },
-  toast: { position: 'absolute', zIndex: 20, bottom: 10, left: 14, right: 14, minHeight: 72, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.yellow, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: colors.yellow, shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 12 }, toastText: { color: colors.background, fontWeight: '900', textAlign: 'center', flexShrink: 1 },
+  toast: { position: 'absolute', zIndex: 20, top: '40%', left: 14, right: 14, minHeight: 72, paddingHorizontal: 16, borderRadius: 16, backgroundColor: colors.yellow, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: colors.yellow, shadowOpacity: 0.45, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 12 }, toastCopy: { flexShrink: 1, alignItems: 'center' }, toastText: { color: colors.background, fontWeight: '900', textAlign: 'center', flexShrink: 1 }, achievementToast: { minHeight: 92, borderWidth: 2, borderColor: colors.yellow, backgroundColor: '#26152d', shadowColor: colors.pink, shadowOpacity: .75, shadowRadius: 18, elevation: 18 }, achievementToastIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.yellow, backgroundColor: '#3a2d12' }, achievementToastTitle: { color: colors.yellow, fontSize: 17, fontWeight: '900', letterSpacing: 1.2 }, achievementToastText: { color: colors.mint, fontSize: 11, lineHeight: 16, marginTop: 2 },
   turnControls: { paddingHorizontal: 14, paddingTop: 9, paddingBottom: 9, backgroundColor: colors.background, borderBottomColor: '#253438', borderBottomWidth: 1 },
   dailyTurnControls: { backgroundColor: '#121306', borderBottomColor: '#656a13' },
   chooserContent: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 38 }, chooserEyebrow: { color: colors.pink, fontSize: 11, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' }, chooserTitle: { color: colors.yellow, fontSize: 27, fontWeight: '900', marginTop: 4 }, chooserIntro: { color: colors.mint, fontSize: 13, lineHeight: 19, marginTop: 5, maxWidth: 430 }, chooserSection: { color: colors.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.3, textTransform: 'uppercase', marginTop: 22, marginBottom: 8 }, choiceList: { gap: 9 }, gameChoice: { minHeight: 94, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 15, borderColor: '#2d3c40', borderWidth: 1, backgroundColor: colors.surface }, toolChoice: { minHeight: 86, backgroundColor: '#101516' }, choicePressed: { opacity: 0.78, transform: [{ scale: 0.985 }] }, choiceIcon: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#20383b' }, toolIcon: { backgroundColor: '#2a2d14' }, choiceCopy: { flex: 1 }, choiceTitle: { color: colors.white, fontSize: 16, fontWeight: '900' }, choiceDescription: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 4 }, choiceArrow: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderColor: colors.cyan, borderWidth: 1 }, toolArrow: { backgroundColor: colors.yellow, borderColor: colors.yellow },
