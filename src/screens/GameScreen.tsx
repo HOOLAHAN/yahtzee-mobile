@@ -11,9 +11,11 @@ import {
   categoryRecommendationValue,
   Category,
   DieFace,
-  maximumAvailableScore,
   rollDie,
   scoreCategory,
+  scoreCategoryForTurn,
+  isCategoryEligibleForRoll,
+  repeatYahtzeeBonus,
   ScoreEntry,
   totalScore,
   upperBonusPoints,
@@ -300,7 +302,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   const bonuses: Record<Player, number> = { 1: upperSectionBonus(histories[1]), 2: upperSectionBonus(histories[2]) };
   const complete = histories[1].length === categories.length && (!twoPlayer || histories[2].length === categories.length);
   useEffect(() => { onPlayNavigationChange?.(hasActiveMode && !complete, showModeChooser); }, [complete, hasActiveMode, onPlayNavigationChange, showModeChooser]);
-  const currentScore = hasRolled ? maximumAvailableScore(dice, used) : 0;
+  const currentScore = hasRolled ? Math.max(...categories.filter((category) => isCategoryEligibleForRoll(category, dice, scores)).map((category) => scoreCategoryForTurn(category, dice, scores) + repeatYahtzeeBonus(scores, dice)), 0) : 0;
   const currentRound = Math.min(scores.length + 1, categories.length);
   const isComputerTurn = computerOpponent && currentPlayer === 2;
   const secondPlayerProfile = computerOpponent ? computerProfile : playerProfiles[1];
@@ -308,9 +310,9 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   const recommendedCategory = useMemo(() => {
     if (!hasRolled || !scoreSuggestionsEnabled) return null;
     return categories
-      .filter((category) => !used.has(category))
-      .reduce<Category | null>((best, category) => !best || categoryRecommendationValue(category, dice) > categoryRecommendationValue(best, dice) ? category : best, null);
-  }, [dice, hasRolled, scoreSuggestionsEnabled, used]);
+      .filter((category) => isCategoryEligibleForRoll(category, dice, scores))
+      .reduce<Category | null>((best, category) => !best || scoreCategoryForTurn(category, dice, scores) > scoreCategoryForTurn(best, dice, scores) || (scoreCategoryForTurn(category, dice, scores) === scoreCategoryForTurn(best, dice, scores) && categoryRecommendationValue(category, dice) > categoryRecommendationValue(best, dice)) ? category : best, null);
+  }, [dice, hasRolled, scoreSuggestionsEnabled, scores]);
 
   useEffect(() => {
     if (!dailyMode) { setDailyAlreadyCompleted(false); return; }
@@ -533,13 +535,16 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       }
 
       if (cancelled) return;
-      const category = computerCategory(computerDice, computerUsed, histories[2]);
-      const entry: ScoreEntry = { category, score: scoreCategory(category, computerDice), dice: [...computerDice] };
+      const suggestedCategory = computerCategory(computerDice, computerUsed, histories[2]);
+      const category = isCategoryEligibleForRoll(suggestedCategory, computerDice, histories[2]) ? suggestedCategory : categories
+        .filter((candidate) => isCategoryEligibleForRoll(candidate, computerDice, histories[2]))
+        .reduce((best, candidate) => scoreCategoryForTurn(candidate, computerDice, histories[2]) > scoreCategoryForTurn(best, computerDice, histories[2]) ? candidate : best);
+      const entry: ScoreEntry = { category, score: scoreCategoryForTurn(category, computerDice, histories[2]), dice: [...computerDice], yahtzeeBonus: repeatYahtzeeBonus(histories[2], computerDice) };
       setSelectedCategory(category);
       await pause(reduceMotion ? 220 : 800);
       if (cancelled) return;
       setHistories((current) => ({ ...current, 2: [...current[2], entry] }));
-      showToast(`Computer chose ${category} for ${entry.score} ${entry.score === 1 ? 'point' : 'points'}`, 'lock');
+      showToast(entry.yahtzeeBonus ? `Computer rolled another Yahtzee: ${entry.score} + 100 bonus points` : `Computer chose ${category} for ${entry.score} ${entry.score === 1 ? 'point' : 'points'}`, 'lock');
       setDice(initialDice); setHeld(new Set()); setRollsLeft(3); setHasRolled(false); setSelectedCategory(null); setCurrentPlayer(1); setViewingPlayer(1);
     };
 
@@ -570,9 +575,9 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   const lockScore = () => {
     if (!selectedCategory || !hasRolled || used.has(selectedCategory)) return;
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const entry = { category: selectedCategory, score: scoreCategory(selectedCategory, dice), dice: [...dice] };
+    const entry: ScoreEntry = { category: selectedCategory, score: scoreCategoryForTurn(selectedCategory, dice, histories[currentPlayer]), dice: [...dice], yahtzeeBonus: repeatYahtzeeBonus(histories[currentPlayer], dice) };
     if (selectedCategory === 'Yahtzee' && entry.score === 50 && rollsLeft === 0) setYahtzeeOnFinalRoll(true);
-    showToast(`${selectedCategory} locked in for ${entry.score} ${entry.score === 1 ? 'point' : 'points'}`, 'lock');
+    showToast(entry.yahtzeeBonus ? `Bonus Yahtzee! ${selectedCategory} scores ${entry.score}, plus 100 bonus points` : `${selectedCategory} locked in for ${entry.score} ${entry.score === 1 ? 'point' : 'points'}`, 'lock');
     setHistories((current) => ({ ...current, [currentPlayer]: [...current[currentPlayer], entry] })); nextRound();
   };
 
@@ -657,6 +662,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
         upper,
         `Subtotal      ${upperSubtotals[player]}`,
         `Bonus         ${bonuses[player] ? `+${upperBonusPoints}` : '—'}`,
+        `Yahtzee bonus ${histories[player].reduce((sum, entry) => sum + (entry.yahtzeeBonus ?? 0), 0) || '—'}`,
         '',
         'LOWER SECTION',
         lower,
@@ -732,6 +738,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       <View style={styles.overviewItem}><Text style={styles.overviewLabel}>Upper</Text><Text style={styles.overviewValue}>{upperSubtotals[player]} / {upperBonusThreshold}</Text></View>
     </View>
     <View style={[styles.bonusRow, bonuses[player] > 0 && styles.bonusRowEarned]}><View style={styles.bonusCopy}><Ionicons name={bonuses[player] > 0 ? 'checkmark-circle' : 'star-outline'} size={17} color={bonuses[player] > 0 ? colors.cyan : colors.muted} /><Text style={styles.bonusLabel}>Upper-section bonus</Text></View><Text style={[styles.bonusValue, bonuses[player] > 0 && styles.bonusEarned]}>{bonuses[player] > 0 ? `+${bonuses[player]}` : `${Math.max(0, upperBonusThreshold - upperSubtotals[player])} needed`}</Text></View>
+    {histories[player].some((entry) => entry.yahtzeeBonus) && <View style={[styles.bonusRow, styles.bonusRowEarned]}><View style={styles.bonusCopy}><Ionicons name="sparkles" size={17} color={colors.yellow} /><Text style={styles.bonusLabel}>Extra Yahtzee bonus</Text></View><Text style={[styles.bonusValue, styles.bonusEarned]}>+{histories[player].reduce((sum, entry) => sum + (entry.yahtzeeBonus ?? 0), 0)}</Text></View>}
     <View style={styles.sheetScoreColumns}><View style={styles.sheetScoreColumn}><Text style={styles.scoreGroupTitle}>Upper section</Text>
     {upperCategories.map((category) => { const entry = histories[player].find((item) => item.category === category); return <View key={category} style={styles.sheetScoreRow}><Text numberOfLines={1} style={styles.sheetCategory}>{category}</Text><Text style={[styles.sheetScore, { color: profile.score }]}>{entry?.score ?? '—'}</Text></View>; })}</View>
     <View style={styles.sheetScoreColumn}><Text style={styles.scoreGroupTitle}>Lower section</Text>
@@ -786,9 +793,9 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       </View> : <>
         <View style={styles.sectionHeadingRow}><View><Text style={[styles.sectionTitle, { color: currentProfile.accent }]}>{isComputerTurn ? 'Computer strategy' : 'Choose a category'}</Text><Text style={styles.sectionSubtitle}>{isComputerTurn ? 'Watch the computer roll, hold and choose.' : hasRolled ? 'Tap once to preview, then lock it in.' : 'Categories unlock after your first roll.'}</Text></View>{recommendedCategory && !isComputerTurn && <View style={styles.recommendedLegend}><Ionicons name="sparkles" size={14} color={dailyMode ? colors.pink : colors.yellow} /><Text style={[styles.recommendedLegendText, dailyMode && { color: colors.pink }]}>Best</Text></View>}</View>
         <View style={styles.categoryGrid}>{categories.map((category) => {
-          const entry = scores.find((item) => item.category === category); const preview = hasRolled ? scoreCategory(category, dice) : 0;
+          const entry = scores.find((item) => item.category === category); const eligible = hasRolled && isCategoryEligibleForRoll(category, dice, scores); const preview = eligible ? scoreCategoryForTurn(category, dice, scores) : 0;
           const selected = selectedCategory === category; const recommended = recommendedCategory === category && !entry;
-          return <Pressable accessibilityRole="button" accessibilityLabel={`${category}, ${entry ? `${entry.score} points, used` : `${preview} points`}${recommended ? ', best available score' : ''}`} accessibilityState={{ disabled: !hasRolled || Boolean(entry) || isComputerTurn, selected }} key={category} disabled={!hasRolled || Boolean(entry) || isComputerTurn} onPress={() => setSelectedCategory(category)} style={[styles.category, arcadeMode && styles.arcadeCategory, category === 'Chance' && styles.chanceCategory, entry && styles.usedCategory, recommended && !isComputerTurn && styles.recommendedCategory, recommended && dailyMode && { borderColor: colors.pink, shadowColor: colors.pink }, selected && styles.selectedCategory, selected && { borderColor: currentProfile.accent, backgroundColor: currentProfile.soft, shadowColor: currentProfile.accent }]}>
+          return <Pressable accessibilityRole="button" accessibilityLabel={`${category}, ${entry ? `${entry.score} points, used` : eligible ? `${preview} points` : 'unavailable for this Joker roll'}${recommended ? ', best available score' : ''}`} accessibilityState={{ disabled: !eligible || Boolean(entry) || isComputerTurn, selected }} key={category} disabled={!eligible || Boolean(entry) || isComputerTurn} onPress={() => setSelectedCategory(category)} style={[styles.category, arcadeMode && styles.arcadeCategory, category === 'Chance' && styles.chanceCategory, (entry || (hasRolled && !eligible)) && styles.usedCategory, recommended && !isComputerTurn && styles.recommendedCategory, recommended && dailyMode && { borderColor: colors.pink, shadowColor: colors.pink }, selected && styles.selectedCategory, selected && { borderColor: currentProfile.accent, backgroundColor: currentProfile.soft, shadowColor: currentProfile.accent }]}>
             <Text numberOfLines={2} style={[styles.categoryName, entry && styles.usedText]}>{categoryLabels[category]}</Text><View style={[styles.scoreBadge, { backgroundColor: currentProfile.soft }, entry && styles.usedBadge, preview === 0 && !entry && styles.zeroBadge]}><Text style={[styles.scoreBadgeText, { color: currentProfile.accent }, entry && styles.usedText]}>{entry?.score ?? preview}</Text></View>{recommended && <Ionicons name="sparkles" size={12} color={dailyMode ? colors.pink : colors.yellow} style={styles.recommendedIcon} />}
           </Pressable>;
         })}</View>
@@ -800,7 +807,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       </>}
     </ScrollView>
 
-    {selectedCategory && !complete && !isComputerTurn && <View style={[styles.lockBar, arcadeMode && styles.arcadeLockBar, { borderColor: currentProfile.accent, shadowColor: currentProfile.accent }]}><View><Text style={styles.lockLabel}>{selectedCategory}</Text><Text style={[styles.lockScore, { color: currentProfile.score }]}>{scoreCategory(selectedCategory, dice)} points</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Lock in ${selectedCategory} for ${scoreCategory(selectedCategory, dice)} points`} onPress={lockScore} style={[styles.lockButton, arcadeMode && styles.arcadeLockButton, { backgroundColor: currentProfile.accent, borderColor: currentProfile.score }]}><Ionicons name="lock-closed" size={18} color={colors.background} /><Text style={styles.lockButtonText}>{arcadeMode ? '> LOCK IN_' : 'Lock In'}</Text></Pressable></View>}
+    {selectedCategory && !complete && !isComputerTurn && <View style={[styles.lockBar, arcadeMode && styles.arcadeLockBar, { borderColor: currentProfile.accent, shadowColor: currentProfile.accent }]}><View><Text style={styles.lockLabel}>{selectedCategory}</Text><Text style={[styles.lockScore, { color: currentProfile.score }]}>{scoreCategoryForTurn(selectedCategory, dice, scores)} points{repeatYahtzeeBonus(scores, dice) ? ' + 100 bonus' : ''}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Lock in ${selectedCategory} for ${scoreCategoryForTurn(selectedCategory, dice, scores)} points${repeatYahtzeeBonus(scores, dice) ? ' plus 100 bonus points' : ''}`} onPress={lockScore} style={[styles.lockButton, arcadeMode && styles.arcadeLockButton, { backgroundColor: currentProfile.accent, borderColor: currentProfile.score }]}><Ionicons name="lock-closed" size={18} color={colors.background} /><Text style={styles.lockButtonText}>{arcadeMode ? '> LOCK IN_' : 'Lock In'}</Text></Pressable></View>}
 
     <Modal transparent animationType="none" visible={showScorecard} onShow={() => scorecardY.setValue(0)} onDismiss={() => scorecardY.setValue(0)} onRequestClose={closeScorecard}>
       <View style={styles.sheetBackdrop}><Pressable accessibilityLabel="Close scorecard" style={styles.sheetDismissArea} onPress={closeScorecard} /><Animated.View style={[styles.sheet, { transform: [{ translateY: scorecardY }] }]}>

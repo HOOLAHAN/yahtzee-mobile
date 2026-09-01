@@ -9,12 +9,21 @@ export type DieFace = 1 | 2 | 3 | 4 | 5 | 6;
 export const upperCategories = categories.slice(0, 6) as readonly Category[];
 export const upperBonusThreshold = 63;
 export const upperBonusPoints = 35;
+export const repeatYahtzeeBonusPoints = 100;
 
 export interface ScoreEntry {
   category: Category;
   score: number;
   dice: DieFace[];
+  yahtzeeBonus?: number;
 }
+
+export const isYahtzeeRoll = (dice: DieFace[]) => dice.length === 5 && dice.every((die) => die === dice[0]);
+
+export const repeatYahtzeeBonus = (entries: ScoreEntry[], dice: DieFace[]) =>
+  isYahtzeeRoll(dice) && entries.some((entry) => entry.category === 'Yahtzee' && entry.score === 50)
+    ? repeatYahtzeeBonusPoints
+    : 0;
 
 export const rollDie = (): DieFace => (Math.floor(Math.random() * 6) + 1) as DieFace;
 
@@ -54,6 +63,30 @@ export const scoreCategory = (category: Category, dice: DieFace[]) => {
     case 'Chance': return sum;
     default: return 0;
   }
+};
+
+const jokerFixedScores: Partial<Record<Category, number>> = {
+  'Full House': 25,
+  'Small Straight': 30,
+  'Large Straight': 40,
+};
+
+export const isCategoryEligibleForRoll = (category: Category, dice: DieFace[], entries: ScoreEntry[]) => {
+  const used = new Set(entries.map((entry) => entry.category));
+  if (used.has(category)) return false;
+  const yahtzeeEntry = entries.find((entry) => entry.category === 'Yahtzee');
+  if (!isYahtzeeRoll(dice) || !yahtzeeEntry) return true;
+  const matchingUpper = upperCategories[dice[0] - 1];
+  if (!used.has(matchingUpper)) return category === matchingUpper;
+  const openLower = categories.slice(6).some((lower) => !used.has(lower));
+  return openLower ? !upperCategories.includes(category) : upperCategories.includes(category);
+};
+
+export const scoreCategoryForTurn = (category: Category, dice: DieFace[], entries: ScoreEntry[]) => {
+  if (!isCategoryEligibleForRoll(category, dice, entries)) return 0;
+  const yahtzeeBoxUsed = entries.some((entry) => entry.category === 'Yahtzee');
+  if (yahtzeeBoxUsed && isYahtzeeRoll(dice) && jokerFixedScores[category] !== undefined) return jokerFixedScores[category] ?? 0;
+  return scoreCategory(category, dice);
 };
 
 export const maximumAvailableScore = (dice: DieFace[], used: Set<Category>) =>
@@ -100,4 +133,4 @@ export const upperSectionBonus = (entries: ScoreEntry[]) =>
   upperSectionSubtotal(entries) >= upperBonusThreshold ? upperBonusPoints : 0;
 
 export const totalScore = (entries: ScoreEntry[]) =>
-  entries.reduce((total, entry) => total + entry.score, 0) + upperSectionBonus(entries);
+  entries.reduce((total, entry) => total + entry.score + (entry.yahtzeeBonus ?? 0), 0) + upperSectionBonus(entries);

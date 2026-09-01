@@ -12,12 +12,12 @@ export interface GameResultMetrics {
 
 export const resultMetrics = (entries: ScoreEntry[]): GameResultMetrics => ({
   score: totalScore(entries),
-  yahtzeeCount: entries.filter((entry) => entry.category === 'Yahtzee' && entry.score === 50).length,
+  yahtzeeCount: entries.filter((entry) => entry.dice.length === 5 && entry.dice.every((die) => die === entry.dice[0])).length,
   earnedUpperBonus: upperSectionBonus(entries) > 0,
   completedSmallStraight: entries.some((entry) => entry.category === 'Small Straight' && entry.score === 30),
   completedLargeStraight: entries.some((entry) => entry.category === 'Large Straight' && entry.score === 40),
   noZeroScores: entries.length === 13 && entries.every((entry) => entry.score > 0),
-  scorecard: JSON.stringify(Object.fromEntries(entries.map((entry) => [entry.category, entry.score]))),
+  scorecard: JSON.stringify({ ...Object.fromEntries(entries.map((entry) => [entry.category, entry.score])), 'Yahtzee Bonus': entries.reduce((sum, entry) => sum + (entry.yahtzeeBonus ?? 0), 0) }),
 });
 
 export const currentDailyStreak = (dateKeys: string[], today: string) => {

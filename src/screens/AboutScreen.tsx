@@ -27,7 +27,7 @@ const scoring = [
   ['Three/Four of a Kind', 'Score the total of all dice when enough values match.'],
   ['Full House', 'Three of one value and two of another scores 25.'],
   ['Small/Large Straight', 'Four or five consecutive values score 30 or 40.'],
-  ['Yahtzee', 'Five matching dice score 50.'],
+  ['Yahtzee', 'Five matching dice score 50. After scoring that 50, every further Yahtzee adds a 100-point bonus.'],
   ['Chance', 'Add all five dice.'],
 ];
 
