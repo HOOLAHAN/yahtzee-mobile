@@ -15,15 +15,17 @@ const scoreLabels: Record<string, string> = { Ones: 'Ones', Twos: 'Twos', Threes
 const upperCategories = ['Ones', 'Twos', 'Threes', 'Fours', 'Fives', 'Sixes'];
 const lowerCategories = ['Three of a Kind', 'Four of a Kind', 'Full House', 'Small Straight', 'Large Straight', 'Yahtzee', 'Chance'];
 const readScorecard = (value?: string) => { if (!value) return null; try { return JSON.parse(value) as Record<string, number>; } catch { return null; } };
-const highestScorePerUser = (entries: LeaderboardEntry[]) => {
-  const best = new Map<string, LeaderboardEntry>();
-  entries.forEach((entry) => {
-    const current = best.get(entry.userId);
-    const entryTime = new Date(entry.completedAt ?? entry.timestamp).getTime();
-    const currentTime = current ? new Date(current.completedAt ?? current.timestamp).getTime() : 0;
-    if (!current || entry.score > current.score || (entry.score === current.score && entryTime > currentTime)) best.set(entry.userId, entry);
-  });
-  return [...best.values()].sort((a, b) => b.score - a.score).slice(0, 100);
+const topScoresPerUser = (entries: LeaderboardEntry[], perUser: number) => {
+  const counts = new Map<string, number>();
+  return [...entries]
+    .sort((a, b) => b.score - a.score || new Date(b.completedAt ?? b.timestamp).getTime() - new Date(a.completedAt ?? a.timestamp).getTime())
+    .filter((entry) => {
+      const count = counts.get(entry.userId) ?? 0;
+      if (count >= perUser) return false;
+      counts.set(entry.userId, count + 1);
+      return true;
+    })
+    .slice(0, 50);
 };
 function ScorecardBreakdown({ value }: { value?: string }) {
   const card = readScorecard(value); if (!card) return null;
@@ -84,14 +86,14 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
       } else if (competition === 'solo') {
         const [legacy, details] = await Promise.all([
           mine && user ? fetchUserScores(user.userId) : fetchLeaderboard(),
-          mine && user ? fetchMyGameResults(user.userId) : fetchSoloResults(100),
+          mine && user ? fetchMyGameResults(user.userId) : fetchSoloResults(1000),
         ]);
         const indexed = details.filter((result) => result.mode === 'SOLO').map((result) => ({ ...result, timestamp: result.completedAt } as LeaderboardEntry));
         const indexedIds = new Set(indexed.map((result) => result.id));
-        setScores(highestScorePerUser(filterResultsByPeriod([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))], period)));
+        setScores(topScoresPerUser(filterResultsByPeriod([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))], period), 3));
       } else {
         const daily = period === 'today' ? await fetchDailyResults(localDateKey()) : filterResultsByPeriod(await fetchAllDailyResults(1000), period);
-        setScores(highestScorePerUser(daily as LeaderboardEntry[]));
+        setScores(topScoresPerUser(daily as LeaderboardEntry[], 1));
       }
       setLastUpdated(new Date());
     }
