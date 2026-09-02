@@ -8,6 +8,7 @@ interface UserDetails {
   email?: string;
   firstName?: string;
   lastName?: string;
+  role: 'ADMIN' | 'PLAYER';
 }
 
 interface AuthValue {
@@ -33,13 +34,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const [current, attributes] = await Promise.all([getCurrentUser(), fetchUserAttributes()]);
+      const [current, attributes, session] = await Promise.all([getCurrentUser(), fetchUserAttributes(), fetchAuthSession()]);
+      const groups = session.tokens?.idToken?.payload['cognito:groups'];
       setUser({
         userId: current.username,
         username: attributes.preferred_username || attributes.email || current.username,
         email: attributes.email,
         firstName: attributes.given_name,
         lastName: attributes.family_name,
+        role: Array.isArray(groups) && groups.includes('Admin') ? 'ADMIN' : 'PLAYER',
       });
     } catch {
       setUser(null);
