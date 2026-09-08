@@ -66,6 +66,7 @@ export default function App() {
   const [canContinueGame, setCanContinueGame] = useState(false);
   const [gameSettingsOpen, setGameSettingsOpen] = useState(true);
   const [dailyLeaderboardRequest, setDailyLeaderboardRequest] = useState(0);
+  const [liveGameRequest, setLiveGameRequest] = useState<{ token: number; gameId?: string | null }>({ token: 0 });
   const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'stats' ? 'Stats' : tab === 'account' ? 'Account' : tab === 'admin' ? 'Admin' : 'About';
 
   useEffect(() => {
@@ -78,9 +79,9 @@ export default function App() {
     });
   }, []);
   useEffect(() => {
-    const openNotification = (destination: unknown) => { if (destination === 'daily') { setTab('game'); setDailyLaunchRequest((value) => value + 1); } else if (destination === 'stats') setTab('stats'); };
-    void Notifications.getLastNotificationResponseAsync().then((response) => { if (response) { openNotification(response.notification.request.content.data?.destination); void Notifications.clearLastNotificationResponseAsync(); } });
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => openNotification(response.notification.request.content.data?.destination));
+    const openNotification = (destination: unknown, gameId?: unknown) => { if (destination === 'daily') { setTab('game'); setDailyLaunchRequest((value) => value + 1); } else if (destination === 'stats') setTab('stats'); else if (destination === 'live-game') { setTab('game'); setLiveGameRequest((value) => ({ token: value.token + 1, gameId: typeof gameId === 'string' ? gameId : null })); } };
+    void Notifications.getLastNotificationResponseAsync().then((response) => { if (response) { const data = response.notification.request.content.data; openNotification(data?.destination, data?.gameId); void Notifications.clearLastNotificationResponseAsync(); } });
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => { const data = response.notification.request.content.data; openNotification(data?.destination, data?.gameId); });
     return () => subscription.remove();
   }, []);
   const changeScoreSuggestions = (enabled: boolean) => { setScoreSuggestionsEnabled(enabled); void AsyncStorage.setItem(scoreSuggestionsKey, String(enabled)); };
@@ -107,7 +108,7 @@ export default function App() {
         <StatusBar style="light" />
         <View style={[styles.header, arcadeModeEnabled && styles.arcadeHeader]}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text numberOfLines={1} style={[styles.logo, arcadeModeEnabled && styles.arcadeLogo]}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
         <View style={[styles.screen, arcadeModeEnabled && styles.arcadeScreen]}>
-          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen resumeRequest={resumeGameRequest} onPlayNavigationChange={handlePlayNavigationChange} onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} diceAnimation={diceAnimation} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenDailyLeaderboard={() => { setDailyLeaderboardRequest((value) => value + 1); setTab('stats'); }} onOpenAccount={openAccount} /></View>
+          <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen resumeRequest={resumeGameRequest} liveGameRequest={liveGameRequest} onPlayNavigationChange={handlePlayNavigationChange} onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} diceAnimation={diceAnimation} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenDailyLeaderboard={() => { setDailyLeaderboardRequest((value) => value + 1); setTab('stats'); }} onOpenAccount={openAccount} /></View>
           {tab === 'stats' && <StatsScreen onOpenAccount={() => openAccount(true)} dailyLeaderboardRequest={dailyLeaderboardRequest} />}
           {tab === 'account' && <AccountScreen onOpenAdmin={() => setTab('admin')} registrationRequest={accountRegistrationRequest} scoreSuggestionsEnabled={scoreSuggestionsEnabled} onScoreSuggestionsChange={changeScoreSuggestions} diceAnimation={diceAnimation} onDiceAnimationChange={changeDiceAnimation} arcadeModeEnabled={arcadeModeEnabled} onArcadeModeChange={changeArcadeMode} remindersEnabled={remindersEnabled} reminderHour={reminderHour} onRemindersChange={(enabled) => void changeReminders(enabled)} onRequestReminders={() => changeReminders(true)} onReminderHourChange={(hour) => void changeReminderHour(hour)} />}
           {tab === 'admin' && <AdminScreen onClose={() => setTab('account')} />}

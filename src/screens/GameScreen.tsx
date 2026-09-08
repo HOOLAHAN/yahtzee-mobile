@@ -35,6 +35,7 @@ import { dailyDiceForThrow, localDateKey } from '../lib/dailyChallenge';
 import { resultMetrics } from '../lib/engagement';
 import { createGameResult, DailyRoundStanding, fetchDailyResults, GameResult, submitDailyRoundProgress } from '../services/gameResults';
 import { defaultDiceAnimation, DiceAnimation } from '../lib/diceAnimation';
+import { LiveGameScreen } from './LiveGameScreen';
 
 const initialDice: DieFace[] = [1, 1, 1, 1, 1];
 const storageKey = 'yahtzee.active-game.v1';
@@ -49,7 +50,7 @@ const categoryLabels: Record<Category, string> = {
 };
 type Player = 1 | 2;
 type Histories = Record<Player, ScoreEntry[]>;
-type GameMode = 'solo' | 'daily' | 'computer' | 'pass' | 'virtual' | 'real';
+type GameMode = 'solo' | 'daily' | 'computer' | 'pass' | 'remote' | 'virtual' | 'real';
 
 interface PersistedGame {
   ownerKey?: string;
@@ -90,6 +91,7 @@ function GameModeChooser({ onChange }: { onChange: (mode: GameMode) => void }) {
     { mode: 'daily', label: 'Daily Challenge', description: 'Play today’s fixed roll sequence. Everyone gets the same candidate dice each roll; your holds and scoring choices decide the result.', icon: 'sunny-outline' },
     { mode: 'computer', label: 'Vs Computer', description: 'Test your choices against a strategic computer opponent.', icon: 'hardware-chip-outline' },
     { mode: 'pass', label: 'Pass & Play', description: 'Share this device and take turns in a two-player game.', icon: 'people-outline' },
+    { mode: 'remote', label: 'Remote Game', description: 'Create or join a live two-device game and take turns from anywhere.', icon: 'globe-outline' },
   ];
   const tools: { mode: GameMode; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { mode: 'virtual', label: 'Dice Roller', description: 'Roll one or two dice for any tabletop game.', icon: 'dice-outline' },
@@ -235,9 +237,9 @@ function computerCategory(dice: DieFace[], used: Set<Category>, entries: ScoreEn
   return available.reduce((best, category) => computerCategoryValue(category, dice, entries) > computerCategoryValue(best, dice, entries) ? category : best);
 }
 
-interface GameScreenProps { chooserRequest?: number; resumeRequest?: number; dailyLaunchRequest?: number; onHeaderTitleChange?: (title: string) => void; onPlayNavigationChange?: (canContinue: boolean, chooserOpen: boolean) => void; scoreSuggestionsEnabled?: boolean; diceAnimation?: DiceAnimation; remindersEnabled?: boolean; onRequestReminders?: () => void; onDailyCompleted?: () => void; onOpenDailyLeaderboard?: () => void; onOpenAccount?: (createAccount?: boolean) => void }
+interface GameScreenProps { chooserRequest?: number; resumeRequest?: number; dailyLaunchRequest?: number; liveGameRequest?: { token: number; gameId?: string | null }; onHeaderTitleChange?: (title: string) => void; onPlayNavigationChange?: (canContinue: boolean, chooserOpen: boolean) => void; scoreSuggestionsEnabled?: boolean; diceAnimation?: DiceAnimation; remindersEnabled?: boolean; onRequestReminders?: () => void; onDailyCompleted?: () => void; onOpenDailyLeaderboard?: () => void; onOpenAccount?: (createAccount?: boolean) => void }
 
-export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchRequest = 0, onHeaderTitleChange, onPlayNavigationChange, scoreSuggestionsEnabled = true, diceAnimation = defaultDiceAnimation, remindersEnabled = false, onRequestReminders, onDailyCompleted, onOpenDailyLeaderboard, onOpenAccount }: GameScreenProps) {
+export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchRequest = 0, liveGameRequest, onHeaderTitleChange, onPlayNavigationChange, scoreSuggestionsEnabled = true, diceAnimation = defaultDiceAnimation, remindersEnabled = false, onRequestReminders, onDailyCompleted, onOpenDailyLeaderboard, onOpenAccount }: GameScreenProps) {
   const { height: screenHeight } = useWindowDimensions();
   const compactGameLayout = screenHeight < 900;
   const arcadeMode = useArcadeMode();
@@ -247,6 +249,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   const [scorekeeperMode, setScorekeeperMode] = useState(false);
   const [virtualDiceMode, setVirtualDiceMode] = useState(false);
   const [dailyMode, setDailyMode] = useState(false);
+  const [remoteMode, setRemoteMode] = useState(false);
   const [dailyDate, setDailyDate] = useState(localDateKey);
   const [dailyThrowIndex, setDailyThrowIndex] = useState(0);
   const [progressRecorded, setProgressRecorded] = useState(false);
@@ -290,11 +293,12 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
 
   useEffect(() => { setShowModeChooser(true); }, [chooserRequest]);
   useEffect(() => { if (resumeRequest && hasActiveMode) setShowModeChooser(false); }, [hasActiveMode, resumeRequest]);
+  useEffect(() => { if (liveGameRequest?.token) { setRemoteMode(true); setHasActiveMode(true); setShowModeChooser(false); } }, [liveGameRequest]);
   useEffect(() => { void AsyncStorage.getItem('yahtzee.tip.hold-dice.v1').then((value) => setHoldTipSeen(value === 'true')); }, []);
   useEffect(() => {
-    const title = showModeChooser ? 'Yahtzee!' : scorekeeperMode ? 'Scorecard' : virtualDiceMode ? 'Dice Roller' : dailyMode ? 'Daily Challenge' : computerOpponent ? 'Vs Computer' : twoPlayer ? 'Pass & Play' : 'Single Player';
+    const title = showModeChooser ? 'Yahtzee!' : remoteMode ? 'Remote Game' : scorekeeperMode ? 'Scorecard' : virtualDiceMode ? 'Dice Roller' : dailyMode ? 'Daily Challenge' : computerOpponent ? 'Vs Computer' : twoPlayer ? 'Pass & Play' : 'Single Player';
     onHeaderTitleChange?.(title);
-  }, [computerOpponent, dailyMode, onHeaderTitleChange, scorekeeperMode, showModeChooser, twoPlayer, virtualDiceMode]);
+  }, [computerOpponent, dailyMode, onHeaderTitleChange, remoteMode, scorekeeperMode, showModeChooser, twoPlayer, virtualDiceMode]);
   const toastAnimation = useRef<Animated.CompositeAnimation | null>(null);
   const scorecardY = useRef(new Animated.Value(0)).current;
 
@@ -639,7 +643,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
         if (parsed.dailyMode && parsed.dailyDate === today && Array.isArray(parsed.dice) && parsed.dice.length === 5 && parsed.histories) saved = parsed;
       } catch { saved = null; }
     }
-    setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); setVirtualDiceMode(mode === 'virtual'); setDailyMode(mode === 'daily'); setHasActiveMode(true); setShowModeChooser(false); clearGame();
+    setTwoPlayer(mode === 'pass' || mode === 'computer'); setComputerOpponent(mode === 'computer'); setScorekeeperMode(mode === 'real'); setVirtualDiceMode(mode === 'virtual'); setDailyMode(mode === 'daily'); setRemoteMode(mode === 'remote'); setHasActiveMode(true); setShowModeChooser(false); clearGame();
     const startingPlayer: Player = mode === 'computer' ? 2 : 1;
     setCurrentPlayer(startingPlayer); setViewingPlayer(startingPlayer);
     if (saved) {
@@ -650,7 +654,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
     }
   };
   const changeMode = (mode: GameMode) => {
-    const activeMode = scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : dailyMode ? 'daily' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
+    const activeMode = remoteMode ? 'remote' : scorekeeperMode ? 'real' : virtualDiceMode ? 'virtual' : dailyMode ? 'daily' : computerOpponent ? 'computer' : twoPlayer ? 'pass' : 'solo';
     if (mode === activeMode) {
       if (mode === 'daily' && dailyDate !== localDateKey()) clearGame();
       return setShowModeChooser(false);
@@ -788,6 +792,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   };
 
   if (showModeChooser) return <GameModeChooser onChange={changeMode} />;
+  if (remoteMode) return <LiveGameScreen requestedGameId={liveGameRequest?.gameId} onClose={() => { setRemoteMode(false); setShowModeChooser(true); }} onOpenAccount={() => onOpenAccount?.()} />;
   if (scorekeeperMode) return <View style={styles.gameContainer}><RealDiceScreen onOpenSettings={() => setShowModeChooser(true)} /></View>;
   if (virtualDiceMode) return <View style={styles.gameContainer}><VirtualDiceScreen diceAnimation={diceAnimation} onOpenSettings={() => setShowModeChooser(true)} /></View>;
 

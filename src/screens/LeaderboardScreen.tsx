@@ -114,13 +114,13 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
   }, [load]);
 
   const gameTypeLabel = mine
-    ? ({ ALL: 'All games', SOLO: 'Solo', DAILY: 'Daily Challenge', COMPUTER: 'Vs Computer', PASS: 'Pass & Play', REAL: 'Real Dice' } as const)[historyMode]
+    ? ({ ALL: 'All games', SOLO: 'Solo', DAILY: 'Daily Challenge', COMPUTER: 'Vs Computer', PASS: 'Pass & Play', REAL: 'Real Dice', REMOTE: 'Remote Game' } as const)[historyMode]
     : competition === 'daily' ? 'Daily Challenge' : 'Solo';
   const timePeriodLabel = mine
     ? historyDate === 'all' ? 'Any date' : historyDate === 'week' ? 'This week' : 'This month'
     : period === 'today' ? 'Today' : period === 'week' ? 'This week' : period === 'month' ? 'This month' : 'All time';
   const typeOptions = mine
-    ? [{ value: 'ALL', label: 'All games' }, { value: 'SOLO', label: 'Solo' }, { value: 'DAILY', label: 'Daily Challenge' }, { value: 'COMPUTER', label: 'Vs Computer' }, { value: 'PASS', label: 'Pass & Play' }, { value: 'REAL', label: 'Real Dice' }]
+    ? [{ value: 'ALL', label: 'All games' }, { value: 'SOLO', label: 'Solo' }, { value: 'DAILY', label: 'Daily Challenge' }, { value: 'COMPUTER', label: 'Vs Computer' }, { value: 'PASS', label: 'Pass & Play' }, { value: 'REMOTE', label: 'Remote Game' }, { value: 'REAL', label: 'Real Dice' }]
     : [{ value: 'solo', label: 'Solo' }, { value: 'daily', label: 'Daily Challenge' }];
   const periodOptions = mine
     ? [{ value: 'all', label: 'Any date' }, { value: 'week', label: 'This week' }, { value: 'month', label: 'This month' }]

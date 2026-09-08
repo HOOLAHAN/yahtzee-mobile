@@ -3,7 +3,7 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import { GameResultMetrics } from '../lib/engagement';
 import { graphqlWithDevLog } from '../lib/apiLogger';
 
-export type ResultMode = 'SOLO' | 'DAILY' | 'COMPUTER' | 'PASS' | 'REAL';
+export type ResultMode = 'SOLO' | 'DAILY' | 'COMPUTER' | 'PASS' | 'REAL' | 'REMOTE';
 export interface GameResult extends GameResultMetrics {
   id: string; userId: string; username: string; mode: ResultMode; modeDate: string;
   challengeDate?: string; completedAt: string; yahtzeeOnFinalRoll: boolean;
