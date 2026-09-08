@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Image, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, AppState, Image, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -20,6 +20,7 @@ import { Onboarding } from './src/components/Onboarding';
 import { dailyChallengeCompleted, disableDailyReminders, enableDailyReminders, refreshDailyReminders, updateReminderHour } from './src/services/dailyReminders';
 import { defaultDiceAnimation, DiceAnimation, diceAnimationStorageKey } from './src/lib/diceAnimation';
 import { AppText as Text, ArcadeModeProvider } from './src/components/AppText';
+import { fetchMyLiveGames } from './src/services/liveGames';
 
 type Tab = 'game' | 'stats' | 'account' | 'about' | 'admin';
 const scoreSuggestionsKey = 'yahtzee.score-suggestions.v1';
@@ -49,6 +50,30 @@ function PendingScoreSync() {
   }, [user]);
 
   return null;
+}
+
+function LiveTurnBadge({ visible }: { visible: boolean }) {
+  const { user } = useAuth();
+  const [turns, setTurns] = useState(0);
+
+  const refresh = useCallback(() => {
+    if (!user) { setTurns(0); return; }
+    void fetchMyLiveGames()
+      .then((games) => setTurns(games.filter((game) => game.status === 'ACTIVE' && game.currentUserId === user.userId).length))
+      .catch(() => undefined);
+  }, [user]);
+
+  useEffect(() => {
+    refresh();
+    if (!user) return;
+    const timer = setInterval(refresh, 10000);
+    const appState = AppState.addEventListener('change', (state) => { if (state === 'active') refresh(); });
+    const network = NetInfo.addEventListener((state) => { if (state.isConnected && state.isInternetReachable !== false) refresh(); });
+    return () => { clearInterval(timer); appState.remove(); network(); };
+  }, [refresh, user]);
+
+  if (!visible || turns === 0) return null;
+  return <View style={styles.liveTurnBadge}><Text style={styles.liveTurnBadgeText}>{turns > 9 ? '9+' : turns}</Text></View>;
 }
 
 export default function App() {
@@ -118,6 +143,7 @@ export default function App() {
           {tabs.map((item) => { const active = tab === item.key || (tab === 'admin' && item.key === 'account'); return (
             <Pressable key={item.key} onPress={() => { void Haptics.selectionAsync(); if (item.key === 'game' && canContinueGame && (tab !== 'game' || gameSettingsOpen)) setResumeGameRequest((value) => value + 1); setTab(item.key); }} style={[styles.tab, arcadeModeEnabled && styles.arcadeTab, active && styles.activeTabPill, arcadeModeEnabled && active && styles.arcadeActiveTabPill]}>
               <Ionicons name={active ? item.activeIcon : item.icon} size={23} color={active ? colors.cyan : colors.muted} />
+              {item.key === 'game' && <LiveTurnBadge visible={tab !== 'game' || gameSettingsOpen} />}
               <Text style={[styles.tabLabel, active && styles.activeTab]}>{item.key === 'game' && canContinueGame && (tab !== 'game' || gameSettingsOpen) ? 'Resume' : item.label}</Text>
             </Pressable>
           ); })}
@@ -159,6 +185,8 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, borderRadius: 27 },
+  liveTurnBadge: { position: 'absolute', top: 4, right: 18, minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.pink, borderWidth: 2, borderColor: '#121a1d' },
+  liveTurnBadgeText: { color: colors.white, fontSize: 9, lineHeight: 11, fontWeight: '900' },
   activeTabPill: { backgroundColor: '#20383b', borderColor: '#315a5e', borderWidth: 1 },
   arcadeTabBar: { borderRadius: 5, borderWidth: 2, borderColor: '#315a5e', backgroundColor: '#080f11', shadowOpacity: 0.5, shadowRadius: 0, shadowOffset: { width: 3, height: 3 }, elevation: 8 },
   arcadeTab: { borderRadius: 2 },
