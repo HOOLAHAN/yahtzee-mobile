@@ -149,7 +149,7 @@ const styles = StyleSheet.create({
   compactVersus: { minHeight: 42, marginTop: 8, paddingVertical: 5 },
   compactPlayer: { flex: 1, color: colors.muted, textAlign: 'center', fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
   roundText: { color: colors.muted, fontSize: 13 },
-  bottomActions: { flexDirection: 'row', gap: 10, paddingHorizontal: 14, paddingBottom: 8 },
+  bottomActions: { width: '100%', flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: -70 },
   bottomAction: { flex: 1, minHeight: 46, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', borderRadius: 11, borderWidth: 1, borderColor: '#315a5e', backgroundColor: colors.surface },
   otherGamesText: { color: colors.mint, fontSize: 10, fontWeight: '900' },
   rollDots: { flexDirection: 'row', gap: 7 },
