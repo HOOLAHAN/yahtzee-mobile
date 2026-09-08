@@ -14,7 +14,9 @@ type LeaderboardEntry = LeaderboardScore & Partial<GameResult> & { aggregate?: b
 const scoreLabels: Record<string, string> = { Ones: 'Ones', Twos: 'Twos', Threes: 'Threes', Fours: 'Fours', Fives: 'Fives', Sixes: 'Sixes', 'Three of a Kind': '3 of a Kind', 'Four of a Kind': '4 of a Kind', 'Full House': 'Full House', 'Small Straight': 'Small Straight', 'Large Straight': 'Large Straight', Yahtzee: 'Yahtzee', Chance: 'Chance' };
 const upperCategories = ['Ones', 'Twos', 'Threes', 'Fours', 'Fives', 'Sixes'];
 const lowerCategories = ['Three of a Kind', 'Four of a Kind', 'Full House', 'Small Straight', 'Large Straight', 'Yahtzee', 'Chance'];
-const readScorecard = (value?: string) => { if (!value) return null; try { return JSON.parse(value) as Record<string, number>; } catch { return null; } };
+type BonusEntry = { category: string; categoryScore: number; bonus?: number };
+type StoredScorecard = Record<string, unknown>;
+const readScorecard = (value?: string) => { if (!value) return null; try { return JSON.parse(value) as StoredScorecard; } catch { return null; } };
 const topScoresPerUser = (entries: LeaderboardEntry[], perUser: number) => {
   const counts = new Map<string, number>();
   return [...entries]
@@ -29,9 +31,12 @@ const topScoresPerUser = (entries: LeaderboardEntry[], perUser: number) => {
 };
 function ScorecardBreakdown({ value }: { value?: string }) {
   const card = readScorecard(value); if (!card) return null;
-  const upper = upperCategories.reduce((sum, key) => sum + (card[key] ?? 0), 0); const bonus = upper >= 63 ? 35 : 0;
-  const column = (title: string, categories: string[]) => <View style={styles.scorecardColumn}><Text style={styles.scorecardSection}>{title}</Text>{categories.map((category) => { const score = card[category] ?? 0; return <View key={category} style={styles.scorecardRow}><Text numberOfLines={1} style={styles.scorecardLabel}>{scoreLabels[category] ?? category}</Text><Text style={[styles.scorecardValue, score === 0 && styles.zeroScore]}>{score}</Text></View>; })}</View>;
-  return <View style={styles.scorecard}><View style={styles.scorecardHeading}><Text style={styles.scorecardTitle}>Scorecard</Text><Text style={styles.scorecardTotal}>Upper {upper} · Bonus {bonus}</Text></View><View style={styles.scorecardColumns}>{column('UPPER', upperCategories)}{column('LOWER', lowerCategories)}</View></View>;
+  const scoreFor = (key: string) => typeof card[key] === 'number' ? card[key] as number : 0;
+  const bonusEntries = Array.isArray(card['Yahtzee Bonus Entries']) ? card['Yahtzee Bonus Entries'].filter((entry): entry is BonusEntry => Boolean(entry) && typeof entry === 'object' && typeof (entry as BonusEntry).category === 'string') : [];
+  const yahtzeeBonus = scoreFor('Yahtzee Bonus');
+  const upper = upperCategories.reduce((sum, key) => sum + scoreFor(key), 0); const bonus = upper >= 63 ? 35 : 0;
+  const column = (title: string, categories: string[]) => <View style={styles.scorecardColumn}><Text style={styles.scorecardSection}>{title}</Text>{categories.map((category) => { const score = scoreFor(category); const extra = bonusEntries.find((entry) => entry.category === category)?.bonus ?? 0; return <View key={category} style={styles.scorecardRow}><Text numberOfLines={1} style={styles.scorecardLabel}>{scoreLabels[category] ?? category}{extra ? ' ✦' : ''}</Text><Text style={[styles.scorecardValue, score === 0 && !extra && styles.zeroScore]}>{score}{extra ? ` +${extra}` : ''}</Text></View>; })}</View>;
+  return <View style={styles.scorecard}><View style={styles.scorecardHeading}><Text style={styles.scorecardTitle}>Scorecard</Text><Text style={styles.scorecardTotal}>Upper {upper} · Bonus {bonus}{yahtzeeBonus ? ` · Yahtzee +${yahtzeeBonus}` : ''}</Text></View><View style={styles.scorecardColumns}>{column('UPPER', upperCategories)}{column('LOWER', lowerCategories)}</View></View>;
 }
 
 export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }: { onOpenAccount?: () => void; dailyLeaderboardRequest?: number }) {

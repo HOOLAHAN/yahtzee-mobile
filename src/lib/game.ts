@@ -25,6 +25,24 @@ export const repeatYahtzeeBonus = (entries: ScoreEntry[], dice: DieFace[]) =>
     ? repeatYahtzeeBonusPoints
     : 0;
 
+export type JokerTurn = {
+  active: boolean;
+  bonus: number;
+  phase?: 'matching-upper' | 'open-lower' | 'remaining-upper';
+  matchingUpper?: Category;
+};
+
+export const jokerTurn = (entries: ScoreEntry[], dice: DieFace[]): JokerTurn => {
+  const yahtzeeEntry = entries.find((entry) => entry.category === 'Yahtzee');
+  if (!yahtzeeEntry || !isYahtzeeRoll(dice)) return { active: false, bonus: 0 };
+  const used = new Set(entries.map((entry) => entry.category));
+  const matchingUpper = upperCategories[dice[0] - 1];
+  const bonus = yahtzeeEntry.score === 50 ? repeatYahtzeeBonusPoints : 0;
+  if (!used.has(matchingUpper)) return { active: true, bonus, phase: 'matching-upper', matchingUpper };
+  if (categories.slice(6).some((category) => !used.has(category))) return { active: true, bonus, phase: 'open-lower', matchingUpper };
+  return { active: true, bonus, phase: 'remaining-upper', matchingUpper };
+};
+
 export const rollDie = (): DieFace => (Math.floor(Math.random() * 6) + 1) as DieFace;
 
 const countsFor = (dice: DieFace[]) => {

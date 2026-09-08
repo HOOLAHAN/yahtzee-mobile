@@ -17,7 +17,13 @@ export const resultMetrics = (entries: ScoreEntry[]): GameResultMetrics => ({
   completedSmallStraight: entries.some((entry) => entry.category === 'Small Straight' && entry.score === 30),
   completedLargeStraight: entries.some((entry) => entry.category === 'Large Straight' && entry.score === 40),
   noZeroScores: entries.length === 13 && entries.every((entry) => entry.score > 0),
-  scorecard: JSON.stringify({ ...Object.fromEntries(entries.map((entry) => [entry.category, entry.score])), 'Yahtzee Bonus': entries.reduce((sum, entry) => sum + (entry.yahtzeeBonus ?? 0), 0) }),
+  scorecard: JSON.stringify({
+    ...Object.fromEntries(entries.map((entry) => [entry.category, entry.score])),
+    'Yahtzee Bonus': entries.reduce((sum, entry) => sum + (entry.yahtzeeBonus ?? 0), 0),
+    'Yahtzee Bonus Entries': entries
+      .filter((entry) => Boolean(entry.yahtzeeBonus))
+      .map((entry) => ({ category: entry.category, categoryScore: entry.score, bonus: entry.yahtzeeBonus })),
+  }),
 });
 
 export const currentDailyStreak = (dateKeys: string[], today: string) => {
