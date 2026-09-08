@@ -19,13 +19,15 @@ const pips: Record<number, number[]> = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0,
 
 function Die({ value, held, disabled, rollToken, animation, opponentTurn, onPress }: { value: number; held: boolean; disabled: boolean; rollToken: number; animation: DiceAnimation; opponentTurn: boolean; onPress: () => void }) {
   const motion = useRef(new Animated.Value(0)).current;
-  const first = useRef(true);
+  const lastRollToken = useRef(rollToken);
   useEffect(() => {
-    if (first.current) { first.current = false; return; }
+    if (lastRollToken.current === rollToken) return;
+    lastRollToken.current = rollToken;
+    if (held) { motion.stopAnimation(); motion.setValue(0); return; }
     motion.setValue(0);
     const duration = animation === 'quickFlip' ? 280 : animation === 'bounceSpin' ? 760 : 460;
     Animated.timing(motion, { toValue: 1, duration, easing: animation === 'bounceSpin' ? Easing.out(Easing.back(1.6)) : Easing.out(Easing.cubic), useNativeDriver: true }).start();
-  }, [animation, motion, rollToken]);
+  }, [animation, held, motion, rollToken]);
   const transform = animation === 'shake'
     ? [{ translateX: motion.interpolate({ inputRange: [0, .2, .4, .6, .8, 1], outputRange: [0, -8, 8, -6, 5, 0] }) }]
     : animation === 'quickFlip'
@@ -49,7 +51,7 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
   const [rollToken, setRollToken] = useState(0);
   const holdQueue = useRef<Promise<void>>(Promise.resolve());
   const pendingHolds = useRef(0);
-  const rollingLocally = useRef(false);
+  const suppressNextRollAnimation = useRef(false);
   const previousRollsLeft = useRef<number | undefined>(undefined);
 
   const loadLobby = useCallback(async () => {
@@ -79,7 +81,10 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
   }, [game?.id, game?.status]);
 
   useEffect(() => {
-    if (previousRollsLeft.current !== undefined && game?.rollsLeft !== previousRollsLeft.current && !rollingLocally.current) setRollToken((token) => token + 1);
+    if (previousRollsLeft.current !== undefined && game?.rollsLeft !== previousRollsLeft.current) {
+      if (suppressNextRollAnimation.current) suppressNextRollAnimation.current = false;
+      else setRollToken((token) => token + 1);
+    }
     previousRollsLeft.current = game?.rollsLeft;
   }, [game?.rollsLeft]);
 
@@ -99,7 +104,7 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
   const openGame = async (next: LiveGame) => { setGame(next); setResumeGames([]); setError(''); await AsyncStorage.setItem(activeGameKey, next.id); };
   const create = async () => { setBusy(true); setError(''); try { await openGame(await createLiveGame()); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to create a game.'); } finally { setBusy(false); } };
   const join = async () => { setBusy(true); setError(''); try { await openGame(await joinLiveGame(code)); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to join that game.'); } finally { setBusy(false); } };
-  const action = async (value: LiveGameAction) => { if (!game || busy) return; if (value.type === 'ROLL') { rollingLocally.current = true; setRollToken((token) => token + 1); } setBusy(true); setError(''); try { if (value.type === 'ROLL') await holdQueue.current; setGame(await updateLiveGame(game.id, value)); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to update the game.'); } finally { if (value.type === 'ROLL') rollingLocally.current = false; setBusy(false); } };
+  const action = async (value: LiveGameAction) => { if (!game || busy) return; if (value.type === 'ROLL') { suppressNextRollAnimation.current = true; setRollToken((token) => token + 1); } setBusy(true); setError(''); try { if (value.type === 'ROLL') await holdQueue.current; setGame(await updateLiveGame(game.id, value)); } catch (caught) { if (value.type === 'ROLL') suppressNextRollAnimation.current = false; setError(caught instanceof Error ? caught.message : 'Unable to update the game.'); } finally { setBusy(false); } };
   const toggleHold = (index: number) => {
     if (!game || !myTurn || !game.hasRolled) return;
     const gameId = game.id;
