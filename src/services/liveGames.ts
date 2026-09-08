@@ -48,9 +48,10 @@ async function request<T>(query: string, field: string, variables?: Record<strin
 }
 
 const parseJsonArray = <T>(value: T[] | string | null | undefined): T[] => {
+  let parsed: unknown = value;
   try {
-    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
-    return Array.isArray(parsed) ? parsed : [];
+    for (let pass = 0; pass < 2 && typeof parsed === 'string'; pass += 1) parsed = JSON.parse(parsed);
+    return Array.isArray(parsed) ? parsed as T[] : [];
   } catch { return []; }
 };
 const parseGame = (game: LiveGame): LiveGame => ({
