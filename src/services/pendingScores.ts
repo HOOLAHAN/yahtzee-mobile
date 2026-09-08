@@ -6,7 +6,9 @@ const storageKey = 'yahtzee.pending-scores.v1';
 export interface PendingScore {
   id: string;
   score: number;
-  userId: string;
+  // Scores completed while signed out stay unclaimed until the next account
+  // signs in on this device.
+  userId?: string;
   queuedAt: string;
 }
 
@@ -26,7 +28,7 @@ async function readQueue() {
     if (!value) return [];
     const parsed = JSON.parse(value) as PendingScore[];
     return Array.isArray(parsed)
-      ? parsed.filter((item) => item?.id && item?.userId && Number.isInteger(item.score))
+      ? parsed.filter((item) => item?.id && Number.isInteger(item.score) && (!item.userId || typeof item.userId === 'string'))
       : [];
   } catch {
     return [];
@@ -61,8 +63,7 @@ export function subscribeToPendingScores(listener: () => void) {
 export function isRetryableScoreError(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
   return ![
-    'sign-in session has expired', 'sign in again', 'not authorized',
-    'unauthorized', 'needs to be authenticated', 'forbidden', 'validation', 'score must',
+    'validation', 'score must',
   ].some((text) => message.includes(text));
 }
 
@@ -70,10 +71,14 @@ export async function flushPendingScores(userId: string): Promise<PendingScoreFl
   if (flushPromise) return flushPromise;
   flushPromise = (async () => {
     const current = await readQueue();
+    const claimed = current.map((item) => item.userId ? item : { ...item, userId });
+    // Claim guest scores before attempting the network call. If the app closes
+    // during submission, the score remains durably tied to this account.
+    if (claimed.some((item, index) => item !== current[index])) await writeQueue(claimed);
     const submitted: PendingScore[] = [];
     const remaining: PendingScore[] = [];
 
-    for (const item of current) {
+    for (const item of claimed) {
       if (item.userId !== userId) {
         remaining.push(item);
         continue;

@@ -409,6 +409,23 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   }, [gameId, hydrated, queued]);
 
   useEffect(() => {
+    if (!hydrated || !complete || dailyMode || twoPlayer || user || queued || submitted) return;
+    // A guest's completed Solo score must outlive the active-game slot. This
+    // lets them start another game or restart the app before signing in.
+    void queueScore({ id: gameId, score: totals[1] })
+      .then(() => setQueued(true))
+      .catch((error) => console.error('[scores.queueGuest]', error));
+  }, [complete, dailyMode, gameId, hydrated, queued, submitted, totals, twoPlayer, user]);
+
+  useEffect(() => {
+    if (!hydrated || !user || gameOwnerKey !== 'guest' || !complete || twoPlayer) return;
+    // Adopt a completed guest game after sign-in so its detailed result and,
+    // for Daily Challenge, its leaderboard entry are saved to that account.
+    setGameOwnerKey(user.userId);
+    if (dailyMode) void AsyncStorage.setItem(`yahtzee.daily.completed.${dailyDate}.${user.userId}`, 'true');
+  }, [complete, dailyDate, dailyMode, gameOwnerKey, hydrated, twoPlayer, user]);
+
+  useEffect(() => {
     if (!hydrated || !complete || progressRecorded || !user || gameOwnerKey !== dailyPlayerKey) return;
     const metrics = resultMetrics(histories[1]);
     const mode = dailyMode ? 'DAILY' : computerOpponent ? 'COMPUTER' : twoPlayer ? 'PASS' : 'SOLO';
@@ -593,11 +610,13 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
 
   useEffect(() => {
     if (previousDailyPlayerKey.current === dailyPlayerKey) return;
+    const previousPlayerKey = previousDailyPlayerKey.current;
     previousDailyPlayerKey.current = dailyPlayerKey;
-    if (dailyMode) clearGame();
+    const adoptingCompletedGuestGame = previousPlayerKey === 'guest' && dailyPlayerKey !== 'guest' && complete && !twoPlayer;
+    if (dailyMode && !adoptingCompletedGuestGame) clearGame();
     // Daily progress and its completion UI belong to one account only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dailyMode, dailyPlayerKey]);
+  }, [complete, dailyMode, dailyPlayerKey, twoPlayer]);
 
   const reset = () => Alert.alert('Reset game?', 'All scores from this game will be lost.', [
     { text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: clearGame },
@@ -799,10 +818,10 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
         {twoPlayer ? <View style={styles.finalTotals}><Text style={[styles.playerOneText, { color: playerProfiles[0].accent }]}>{computerOpponent ? 'You' : 'Player 1'} · {totals[1]}</Text><Text style={[styles.playerTwoText, { color: secondPlayerProfile.accent }]}>{computerOpponent ? 'Computer' : 'Player 2'} · {totals[2]}</Text></View> : <Text style={styles.finalScore}>{totals[1]}</Text>}
         <Text style={styles.completeCopy}>{dailyStanding || (bonuses[1] ? `Includes the ${upperBonusPoints}-point upper-section bonus.` : 'Final scorecard complete.')}</Text>
         {dailyMode && <Pressable onPress={onOpenDailyLeaderboard} style={[styles.dailyLeaderboardButton, arcadeMode && styles.arcadeSecondaryButton]}><Ionicons name="trophy-outline" size={18} color={colors.yellow} /><Text style={styles.dailyLeaderboardButtonText}>View today’s leaderboard</Text><Ionicons name="chevron-forward" size={17} color={colors.yellow} /></Pressable>}
-        {!user && !twoPlayer && <View style={styles.postGamePrompt}><Ionicons name="cloud-upload-outline" size={22} color={colors.cyan} /><View style={styles.postGameCopy}><Text style={styles.postGameTitle}>Save this score</Text><Text style={styles.postGameText}>Create your player profile now. This completed game will be saved automatically after sign-up.</Text></View><Pressable onPress={() => onOpenAccount?.(true)} style={styles.postGameButton}><Text style={styles.postGameButtonText}>Create profile</Text></Pressable></View>}
+        {!user && !twoPlayer && <View style={styles.postGamePrompt}><Ionicons name="cloud-done-outline" size={22} color={colors.cyan} /><View style={styles.postGameCopy}><Text style={styles.postGameTitle}>Score safe on this device</Text><Text style={styles.postGameText}>{dailyMode ? 'Sign in to submit this Daily result. It will remain here if you close and reopen the app.' : 'Sign in or create a profile when you’re ready. This score will stay queued after you close the app or start another game.'}</Text></View><Pressable onPress={() => onOpenAccount?.()} style={styles.postGameButton}><Text style={styles.postGameButtonText}>Open Account</Text></Pressable></View>}
         {dailyMode && !remindersEnabled && <View style={styles.postGamePrompt}><Ionicons name="notifications-outline" size={22} color={colors.yellow} /><View style={styles.postGameCopy}><Text style={styles.postGameTitle}>Come back tomorrow</Text><Text style={styles.postGameText}>Get a reminder when the next Daily Challenge is waiting.</Text></View><Pressable onPress={onRequestReminders} style={styles.postGameButton}><Text style={styles.postGameButtonText}>Remind me</Text></Pressable></View>}
         {user && !dailyMode && (!twoPlayer || computerOpponent) && <View style={styles.autoSaveStatus}><Ionicons name={submitted ? 'checkmark-circle' : queued ? 'cloud-done-outline' : submitting ? 'cloud-upload-outline' : 'alert-circle-outline'} size={18} color={submitted ? colors.cyan : queued ? colors.yellow : colors.muted} /><Text style={styles.autoSaveText}>{submitted ? 'Score saved automatically' : queued ? 'Score safely queued for upload' : submitting ? 'Saving score automatically…' : 'Preparing to save score…'}</Text></View>}
-        {queued && <Text style={styles.queueHint}>Safe on this device. It will upload when this account is online.</Text>}
+        {queued && <Text style={styles.queueHint}>{user ? 'Safe on this device. It will upload when this account is online.' : 'Waiting safely on this device until you sign in.'}</Text>}
         <View style={styles.completeActions}><Pressable onPress={() => void shareScorecard()} style={[styles.secondaryButton, arcadeMode && styles.arcadeSecondaryButton]}><Ionicons name="share-outline" size={19} color={colors.cyan} /><Text style={styles.secondaryText}>Share</Text></Pressable><Pressable disabled={!dailyMode && Boolean(user) && (!twoPlayer || computerOpponent) && submitting} onPress={dailyMode ? () => setShowModeChooser(true) : clearGame} style={[styles.newGameButton, arcadeMode && styles.arcadeFilledButton, !dailyMode && Boolean(user) && (!twoPlayer || computerOpponent) && submitting && styles.disabled]}><Ionicons name={dailyMode ? 'grid-outline' : 'refresh'} size={19} color={colors.background} /><Text style={styles.newGameText}>{dailyMode ? 'Other Games' : 'New Game'}</Text></Pressable></View>
       </View> : <>
         <View style={styles.sectionHeadingRow}><View><Text style={[styles.sectionTitle, { color: currentProfile.accent }]}>{isComputerTurn ? 'Computer strategy' : 'Choose a category'}</Text><Text style={styles.sectionSubtitle}>{isComputerTurn ? 'Watch the computer roll, hold and choose.' : hasRolled ? 'Tap once to preview, then lock it in.' : 'Categories unlock after your first roll.'}</Text></View>{recommendedCategory && !isComputerTurn && <View style={styles.recommendedLegend}><Ionicons name="sparkles" size={14} color={dailyMode ? colors.pink : colors.yellow} /><Text style={[styles.recommendedLegendText, dailyMode && { color: colors.pink }]}>Best</Text></View>}</View>
