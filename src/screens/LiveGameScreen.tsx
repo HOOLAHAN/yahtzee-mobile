@@ -95,7 +95,9 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
       if (await AsyncStorage.getItem(key)) return;
       const mine = user.userId === game.hostUserId ? game.hostScores : game.guestScores;
       const metrics = resultMetrics(mine);
-      await createGameResult({ id: `remote-${game.id}-${user.userId}`, mode: 'REMOTE', modeDate: 'REMOTE#ALL', completedAt: game.updatedAt, challengeDate: undefined, yahtzeeOnFinalRoll: false, session: JSON.stringify({ liveGameId: game.id, opponent: user.userId === game.hostUserId ? game.guestUsername : game.hostUsername }), ...metrics });
+      const opponentScore = totalScore(user.userId === game.hostUserId ? game.guestScores : game.hostScores);
+      const outcome = game.winnerUserId === null ? 'DRAW' : game.winnerUserId === user.userId ? 'WIN' : 'LOSS';
+      await createGameResult({ id: `remote-${game.id}-${user.userId}`, mode: 'REMOTE', modeDate: 'REMOTE#ALL', completedAt: game.updatedAt, challengeDate: undefined, yahtzeeOnFinalRoll: false, session: JSON.stringify({ liveGameId: game.id, opponent: user.userId === game.hostUserId ? game.guestUsername : game.hostUsername, opponentUserId: user.userId === game.hostUserId ? game.guestUserId : game.hostUserId, opponentScore, outcome }), ...metrics });
       await AsyncStorage.setItem(key, 'true');
     };
     void record().catch(() => undefined);
