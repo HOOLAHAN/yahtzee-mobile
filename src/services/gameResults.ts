@@ -60,13 +60,18 @@ export async function fetchMyGameResults(userId: string, limit = 500) {
   return result.data.gameResultsByUser.items.filter(Boolean) as GameResult[];
 }
 
-export async function fetchDailyResults(dateKey: string, limit = 100) {
-  const result = await graphqlWithDevLog(client, {
-    query: `query DailyResults($modeDate:String!,$limit:Int){gameResultsByModeDate(modeDate:$modeDate,sortDirection:DESC,limit:$limit){items{${fields}}}}`,
-    authMode: 'apiKey', variables: { modeDate: `DAILY#${dateKey}`, limit },
-  });
-  if (!('data' in result)) throw new Error('Unable to load the Daily leaderboard.');
-  return result.data.gameResultsByModeDate.items.filter(Boolean) as GameResult[];
+export async function fetchDailyResults(dateKey: string, limit = 100, expectedUserId?: string) {
+  for (let attempt = 0; attempt < (expectedUserId ? 4 : 1); attempt += 1) {
+    const result = await graphqlWithDevLog(client, {
+      query: `query DailyResults($modeDate:String!,$limit:Int){gameResultsByModeDate(modeDate:$modeDate,sortDirection:DESC,limit:$limit){items{${fields}}}}`,
+      authMode: 'apiKey', variables: { modeDate: `DAILY#${dateKey}`, limit },
+    });
+    if (!('data' in result)) throw new Error('Unable to load the Daily leaderboard.');
+    const items = result.data.gameResultsByModeDate.items.filter(Boolean) as GameResult[];
+    if (!expectedUserId || items.some((item) => item.userId === expectedUserId) || attempt === 3) return items;
+    await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+  }
+  return [];
 }
 
 export async function fetchSoloResults(limit = 500) {

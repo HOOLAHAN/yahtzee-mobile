@@ -54,6 +54,7 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const detailY = useRef(new Animated.Value(0)).current;
+  const loadRequest = useRef(0);
 
   const closeDetails = useCallback(() => setSelected(null), []);
   const detailPanResponder = useMemo(() => PanResponder.create({
@@ -78,6 +79,7 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
   }), [closeDetails, detailY]);
 
   const load = useCallback(async () => {
+    const request = ++loadRequest.current;
     setLoading(true);
     setError('');
     try {
@@ -86,6 +88,7 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
         const indexedIds = new Set(details.map((result) => result.id));
         const history = [...details.map((result) => ({ ...result, timestamp: result.completedAt } as LeaderboardEntry)), ...legacy.filter((score) => !indexedIds.has(score.id)).map((score) => ({ ...score, mode: 'SOLO' as const } as LeaderboardEntry))];
         const datedHistory = filterResultsByPeriod(history, historyDate);
+        if (request !== loadRequest.current) return;
         setHistoryScores(datedHistory);
         setScores(datedHistory.filter((result) => historyMode === 'ALL' || result.mode === historyMode).sort((a, b) => new Date(b.completedAt ?? b.timestamp).getTime() - new Date(a.completedAt ?? a.timestamp).getTime()).slice(0, 100));
       } else if (competition === 'solo') {
@@ -95,16 +98,19 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
         ]);
         const indexed = details.filter((result) => result.mode === 'SOLO').map((result) => ({ ...result, timestamp: result.completedAt } as LeaderboardEntry));
         const indexedIds = new Set(indexed.map((result) => result.id));
+        if (request !== loadRequest.current) return;
         setScores(topScoresPerUser(filterResultsByPeriod([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))], period), 3));
       } else {
-        const daily = period === 'today' ? await fetchDailyResults(localDateKey()) : filterResultsByPeriod(await fetchAllDailyResults(1000), period);
+        const daily = period === 'today' ? await fetchDailyResults(localDateKey(), 100, dailyLeaderboardRequest > 0 ? user?.userId : undefined) : filterResultsByPeriod(await fetchAllDailyResults(1000), period);
+        if (request !== loadRequest.current) return;
         setScores(topScoresPerUser(daily as LeaderboardEntry[], 1));
       }
+      if (request !== loadRequest.current) return;
       setLastUpdated(new Date());
     }
-    catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to load scores.'); }
-    finally { setLoading(false); }
-  }, [competition, historyDate, historyMode, mine, period, user]);
+    catch (caught) { if (request === loadRequest.current) setError(caught instanceof Error ? caught.message : 'Unable to load scores.'); }
+    finally { if (request === loadRequest.current) setLoading(false); }
+  }, [competition, dailyLeaderboardRequest, historyDate, historyMode, mine, period, user]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (dailyLeaderboardRequest > 0) { setMine(false); setCompetition('daily'); setPeriod('today'); } }, [dailyLeaderboardRequest]);
