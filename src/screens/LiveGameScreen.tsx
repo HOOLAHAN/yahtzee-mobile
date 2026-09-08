@@ -47,6 +47,10 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
   const [showScorecard, setShowScorecard] = useState(false);
   const [scorecardPlayer, setScorecardPlayer] = useState<'mine' | 'theirs'>('mine');
   const [rollToken, setRollToken] = useState(0);
+  const holdQueue = useRef<Promise<void>>(Promise.resolve());
+  const pendingHolds = useRef(0);
+  const rollingLocally = useRef(false);
+  const previousRollsLeft = useRef<number | undefined>(undefined);
 
   const loadLobby = useCallback(async () => {
     if (!user) { setLoading(false); return; }
@@ -66,13 +70,18 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
     if (!game || !['WAITING', 'ACTIVE'].includes(game.status)) return;
     let cancelled = false;
     let liveSubscription: { unsubscribe: () => void } | undefined;
-    const accept = (latest: LiveGame) => { if (!cancelled) { setGame((current) => !current || latest.updatedAt >= current.updatedAt ? latest : current); setError(''); } };
+    const accept = (latest: LiveGame) => { if (!cancelled) { setGame((current) => { if (current && latest.updatedAt < current.updatedAt) return current; return pendingHolds.current > 0 && current ? { ...latest, held: current.held } : latest; }); setError(''); } };
     const refresh = async () => { try { const latest = await fetchLiveGame(game.id); if (!cancelled) { setGame((current) => !current || latest.updatedAt >= current.updatedAt ? latest : current); setError(''); } } catch (caught) { if (!cancelled) setError(caught instanceof Error ? caught.message : 'Connection interrupted. Retrying…'); } };
     void subscribeToLiveGame(game.id, accept, (caught) => { if (!cancelled) { setError(caught.message); void refresh(); } }).then((value) => { if (cancelled) value.unsubscribe(); else liveSubscription = value; }).catch((caught) => { if (!cancelled) setError(caught instanceof Error ? caught.message : 'Live updates were interrupted. Retrying…'); });
     const timer = setInterval(() => void refresh(), 5000);
     const appStateSubscription = AppState.addEventListener('change', (state) => { if (state === 'active') void refresh(); });
     return () => { cancelled = true; clearInterval(timer); appStateSubscription.remove(); liveSubscription?.unsubscribe(); };
   }, [game?.id, game?.status]);
+
+  useEffect(() => {
+    if (previousRollsLeft.current !== undefined && game?.rollsLeft !== previousRollsLeft.current && !rollingLocally.current) setRollToken((token) => token + 1);
+    previousRollsLeft.current = game?.rollsLeft;
+  }, [game?.rollsLeft]);
 
   useEffect(() => {
     if (!game || game.status !== 'COMPLETED' || !user) return;
@@ -90,7 +99,24 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
   const openGame = async (next: LiveGame) => { setGame(next); setResumeGames([]); setError(''); await AsyncStorage.setItem(activeGameKey, next.id); };
   const create = async () => { setBusy(true); setError(''); try { await openGame(await createLiveGame()); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to create a game.'); } finally { setBusy(false); } };
   const join = async () => { setBusy(true); setError(''); try { await openGame(await joinLiveGame(code)); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to join that game.'); } finally { setBusy(false); } };
-  const action = async (value: LiveGameAction) => { if (!game || busy) return; if (value.type === 'ROLL') setRollToken((token) => token + 1); setBusy(true); setError(''); try { setGame(await updateLiveGame(game.id, value)); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to update the game.'); } finally { setBusy(false); } };
+  const action = async (value: LiveGameAction) => { if (!game || busy) return; if (value.type === 'ROLL') { rollingLocally.current = true; setRollToken((token) => token + 1); } setBusy(true); setError(''); try { if (value.type === 'ROLL') await holdQueue.current; setGame(await updateLiveGame(game.id, value)); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to update the game.'); } finally { if (value.type === 'ROLL') rollingLocally.current = false; setBusy(false); } };
+  const toggleHold = (index: number) => {
+    if (!game || !myTurn || !game.hasRolled) return;
+    const gameId = game.id;
+    setGame((current) => current ? { ...current, held: current.held.includes(index) ? current.held.filter((heldIndex) => heldIndex !== index) : [...current.held, index] } : current);
+    pendingHolds.current += 1;
+    holdQueue.current = holdQueue.current.then(async () => {
+      try {
+        const latest = await updateLiveGame(gameId, { type: 'TOGGLE_HOLD', index });
+        pendingHolds.current -= 1;
+        setGame((current) => pendingHolds.current > 0 && current ? { ...latest, held: current.held } : latest);
+      } catch (caught) {
+        pendingHolds.current -= 1;
+        setError(caught instanceof Error ? caught.message : 'Unable to update the held dice.');
+        try { setGame(await fetchLiveGame(gameId)); } catch { /* polling will retry */ }
+      }
+    });
+  };
   const leave = () => Alert.alert('Leave remote game?', 'This ends the game for both players.', [{ text: 'Keep Playing', style: 'cancel' }, { text: 'Leave Game', style: 'destructive', onPress: () => void action({ type: 'LEAVE' }) }]);
   const closeGame = async () => { await AsyncStorage.removeItem(activeGameKey); setGame(null); setResumeGames([]); void loadLobby(); };
 
@@ -127,9 +153,9 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
   if (game.status === 'COMPLETED' || game.status === 'ABANDONED') return <ScrollView contentContainerStyle={styles.content}><View style={styles.resultCard}><Ionicons name={game.status === 'COMPLETED' ? 'trophy-outline' : 'exit-outline'} size={42} color={game.status === 'COMPLETED' ? colors.yellow : colors.pink} /><Text style={styles.emptyTitle}>{outcome}</Text>{game.status === 'COMPLETED' && <Text style={styles.resultScore}>{myTotal} – {theirTotal}</Text>}<Text style={styles.emptyCopy}>{game.hostUsername} vs {game.guestUsername}</Text><Pressable onPress={() => void closeGame()} style={styles.primary}><Text style={styles.primaryText}>Back to Remote Games</Text></Pressable></View></ScrollView>;
 
   return <View style={styles.game}><View style={[styles.scoreStrip, styles.compactVersus, !myTurn && styles.opponentScoreStrip]}><Text style={styles.compactPlayer}>You <Text style={styles.scoreValue}>{myTotal}</Text></Text><Text style={styles.versus}>VS</Text><Text numberOfLines={1} style={[styles.compactPlayer, !myTurn && styles.opponentText]}>{opponent} <Text style={!myTurn ? styles.opponentScore : styles.scoreValue}>{theirTotal}</Text></Text></View><View style={styles.gameHeader}><Text style={[styles.turnTitle, !myTurn && styles.opponentText]}>{myTurn ? 'Your turn' : `${opponent}’s turn`}</Text><Text style={styles.roundText}>Round {game.round} of 13</Text></View>
-    <View style={styles.diceRow}>{game.dice.map((die, index) => <Die key={index} value={die} held={game.held.includes(index)} disabled={!myTurn || !game.hasRolled || busy} rollToken={rollToken + (3 - game.rollsLeft)} animation={diceAnimation} opponentTurn={!myTurn} onPress={() => void action({ type: 'TOGGLE_HOLD', index })} />)}</View>
-    <View style={styles.rollMeta}><Text style={[styles.rollGuidance, !myTurn && styles.opponentText]}>{myTurn ? (game.hasRolled ? 'TAP DICE TO HOLD' : 'ROLL TO BEGIN') : `WATCHING ${(opponent ?? 'OPPONENT').toUpperCase()}`}</Text><View style={styles.rollMetaRight}>{busy && <ActivityIndicator size="small" color={myTurn ? colors.cyan : '#5cff88'} />}<View style={styles.rollDots}>{[0,1,2].map((index) => <View key={index} style={[styles.rollDot, index < game.rollsLeft && (myTurn ? styles.rollDotActive : styles.opponentRollDot)]} />)}</View></View></View>
-    {myTurn && <Pressable disabled={busy || game.rollsLeft === 0} onPress={() => void action({ type: 'ROLL' })} style={[styles.rollButton, (busy || game.rollsLeft === 0) && styles.disabled]}><Ionicons name="dice" size={21} color={colors.background} /><Text style={styles.rollText}>{game.hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></Pressable>}
+    <View style={styles.diceRow}>{game.dice.map((die, index) => <Die key={index} value={die} held={game.held.includes(index)} disabled={!myTurn || !game.hasRolled || busy} rollToken={rollToken} animation={diceAnimation} opponentTurn={!myTurn} onPress={() => toggleHold(index)} />)}</View>
+    <View style={styles.rollMeta}><Text style={[styles.rollGuidance, !myTurn && styles.opponentText]}>{myTurn ? (game.hasRolled ? 'TAP DICE TO HOLD' : 'ROLL TO BEGIN') : `WATCHING ${(opponent ?? 'OPPONENT').toUpperCase()}`}</Text><View style={styles.rollMetaRight}><View style={styles.rollDots}>{[0,1,2].map((index) => <View key={index} style={[styles.rollDot, index < game.rollsLeft && (myTurn ? styles.rollDotActive : styles.opponentRollDot)]} />)}</View></View></View>
+    {myTurn && <Pressable disabled={busy || game.rollsLeft === 0} onPress={() => void action({ type: 'ROLL' })} style={[styles.rollButton, game.rollsLeft === 0 && styles.disabled]}><Ionicons name="dice" size={21} color={colors.background} /><Text style={styles.rollText}>{game.hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></Pressable>}
     <View style={styles.turnStats}><Text style={styles.turnStatLabel}>Best now <Text style={styles.turnStatValue}>{bestNow}</Text></Text><Text style={styles.turnStatLabel}>Total <Text style={styles.turnStatValue}>{myTotal}</Text></Text></View>
     <ScrollView contentContainerStyle={styles.categories}><View style={styles.categoryTitleRow}><Text style={[styles.categoryHeading, !myTurn && styles.opponentText]}>{myTurn ? 'Choose a category' : 'Opponent’s turn'}</Text></View>{[upperCategories, categories.slice(6)].map((group, groupIndex) => <View key={groupIndex} style={[styles.categorySection, groupIndex ? styles.lowerSection : styles.upperSection]}><View style={styles.categorySectionHeader}><View style={styles.categorySectionTitle}><Ionicons name={groupIndex ? 'flash-outline' : 'trending-up-outline'} size={15} color={groupIndex ? colors.pink : colors.cyan} /><Text style={[styles.categorySectionText, groupIndex ? styles.lowerSectionText : styles.upperSectionText]}>{groupIndex ? 'Lower section' : 'Upper section'}</Text></View><Text style={styles.categorySectionMeta}>{groupIndex ? 'Combinations' : upperSubtotal >= 63 ? '+35 earned' : `${63 - upperSubtotal} needed`}</Text></View>{!groupIndex && <><View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${Math.min(100, upperSubtotal / 63 * 100)}%` }]} /></View><View style={styles.progressLabels}><Text style={styles.progressText}>{upperSubtotal} / 63</Text><Text style={styles.progressText}>Earn +35</Text></View></>}<View style={styles.categoryGrid}>{group.map((category) => { const entry = (myTurn ? mine : actingScores).find((item) => item.category === category); const available = myTurn && eligible(category); const preview = available ? scoreCategoryForTurn(category, game.dice, mine) : 0; const selected = game.selectedCategory === category; return <Pressable key={category} disabled={!available || busy} onPress={() => void action({ type: 'SELECT_CATEGORY', category })} style={[styles.category, entry && styles.usedCategory, selected && styles.selectedCategory]}><Text numberOfLines={1} style={styles.categoryName}>{labels[category]}</Text><Text style={styles.categoryScore}>{entry?.score ?? (available ? preview : '—')}</Text></Pressable>; })}</View></View>)}<View style={styles.bottomActions}><Pressable onPress={() => { setScorecardPlayer('mine'); setShowScorecard(true); }} style={styles.bottomAction}><Ionicons name="list-outline" size={17} color={colors.cyan} /><Text style={styles.scorecardButtonText}>Scorecards</Text></Pressable><Pressable onPress={onClose} style={styles.bottomAction}><Ionicons name="grid-outline" size={17} color={colors.mint} /><Text style={styles.otherGamesText}>Other games</Text></Pressable><Pressable onPress={leave} style={styles.bottomAction}><Ionicons name="exit-outline" size={17} color={colors.pink} /><Text style={styles.dangerText}>Exit game</Text></Pressable></View></ScrollView>
     {myTurn && game.selectedCategory && <View style={styles.lockBar}><View><Text style={styles.cardTitle}>{labels[game.selectedCategory]}</Text><Text style={styles.cardMeta}>{scoreCategoryForTurn(game.selectedCategory, game.dice, mine)} category{turnBonus ? ` + ${turnBonus} bonus = ${scoreCategoryForTurn(game.selectedCategory, game.dice, mine) + turnBonus} total` : ' points'}</Text></View><Pressable disabled={busy} onPress={() => void action({ type: 'LOCK_CATEGORY', category: game.selectedCategory! })} style={styles.lockButton}><Ionicons name="lock-closed" size={16} color={colors.background} /><Text style={styles.lockText}>Lock In</Text></Pressable></View>}
