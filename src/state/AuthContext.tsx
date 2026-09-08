@@ -1,6 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { confirmResetPassword, confirmSignUp, deleteUser, fetchAuthSession, fetchUserAttributes, getCurrentUser, resendSignUpCode, resetPassword, signIn, signOut, signUp, updatePassword } from 'aws-amplify/auth';
 import { deleteMyProfile, updateMyProfile } from '../services/profiles';
+import { disableAppPushNotifications } from '../services/pushNotifications';
 
 interface UserDetails {
   userId: string;
@@ -104,6 +105,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     refreshUser: async () => { await fetchAuthSession({ forceRefresh: true }); await refresh(); },
     logout: async () => {
+      await disableAppPushNotifications().catch(() => undefined);
       await signOut();
       setUser(null);
     },
