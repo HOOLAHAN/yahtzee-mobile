@@ -752,8 +752,14 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
         leaderboard.forEach((entry) => bestByUser.set(entry.userId, Math.max(entry.score, bestByUser.get(entry.userId) ?? 0)));
         const rankedUsers = [...bestByUser.entries()].sort((a, b) => b[1] - a[1]);
         const rank = rankedUsers.findIndex(([userId]) => userId === user.userId) + 1;
-        if (rank > 0 && rank <= 3) showToast(`Your ${totals[1]} points reached #${rank} on the Solo leaderboard.`, 'achievement', `SOLO #${rank}!`);
-        else showToast(`${totals[1]} points submitted to the leaderboard`);
+        const leaderboardBest = bestByUser.get(user.userId);
+        if (rank > 0 && rank <= 3 && leaderboardBest === totals[1]) {
+          showToast(`Your ${totals[1]} points reached #${rank} on the Solo leaderboard.`, 'achievement', `SOLO #${rank}!`);
+        } else if (rank > 0 && leaderboardBest !== undefined && leaderboardBest > totals[1]) {
+          showToast(`${totals[1]} points saved. Your personal best remains ${leaderboardBest} — #${rank} on the Solo leaderboard.`);
+        } else {
+          showToast(`${totals[1]} points submitted to the leaderboard`);
+        }
       } catch {
         // The score is already safely committed; a rank refresh is optional.
         showToast(`${totals[1]} points submitted to the leaderboard`);
