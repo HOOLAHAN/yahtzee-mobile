@@ -238,7 +238,7 @@ function computerCategory(dice: DieFace[], used: Set<Category>, entries: ScoreEn
   return available.reduce((best, category) => computerCategoryValue(category, dice, entries) > computerCategoryValue(best, dice, entries) ? category : best);
 }
 
-interface GameScreenProps { chooserRequest?: number; resumeRequest?: number; dailyLaunchRequest?: number; liveGameRequest?: { token: number; gameId?: string | null }; onHeaderTitleChange?: (title: string) => void; onPlayNavigationChange?: (canContinue: boolean, chooserOpen: boolean) => void; scoreSuggestionsEnabled?: boolean; diceAnimation?: DiceAnimation; remindersEnabled?: boolean; onRequestReminders?: () => void; onDailyCompleted?: () => void; onOpenDailyLeaderboard?: () => void; onOpenAccount?: (createAccount?: boolean) => void }
+interface GameScreenProps { chooserRequest?: number; resumeRequest?: number; dailyLaunchRequest?: number; liveGameRequest?: { token: number; gameId?: string | null; code?: string | null }; onHeaderTitleChange?: (title: string) => void; onPlayNavigationChange?: (canContinue: boolean, chooserOpen: boolean) => void; scoreSuggestionsEnabled?: boolean; diceAnimation?: DiceAnimation; remindersEnabled?: boolean; onRequestReminders?: () => void; onDailyCompleted?: () => void; onOpenDailyLeaderboard?: () => void; onOpenAccount?: (createAccount?: boolean) => void }
 
 export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchRequest = 0, liveGameRequest, onHeaderTitleChange, onPlayNavigationChange, scoreSuggestionsEnabled = true, diceAnimation = defaultDiceAnimation, remindersEnabled = false, onRequestReminders, onDailyCompleted, onOpenDailyLeaderboard, onOpenAccount }: GameScreenProps) {
   const { height: screenHeight } = useWindowDimensions();
@@ -818,7 +818,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   };
 
   if (showModeChooser) return <GameModeChooser onChange={changeMode} remoteTurns={remoteTurns} dailyOutstanding={dailyOutstanding} />;
-  if (remoteMode) return <LiveGameScreen requestedGameId={liveGameRequest?.gameId} diceAnimation={diceAnimation} onClose={() => { setRemoteMode(false); setShowModeChooser(true); }} onOpenAccount={() => onOpenAccount?.()} />;
+  if (remoteMode) return <LiveGameScreen requestedGameId={liveGameRequest?.gameId} requestedCode={liveGameRequest?.code} diceAnimation={diceAnimation} onClose={() => { setRemoteMode(false); setShowModeChooser(true); }} onOpenAccount={() => onOpenAccount?.()} />;
   if (scorekeeperMode) return <View style={styles.gameContainer}><RealDiceScreen onOpenSettings={() => setShowModeChooser(true)} /></View>;
   if (virtualDiceMode) return <View style={styles.gameContainer}><VirtualDiceScreen diceAnimation={diceAnimation} onOpenSettings={() => setShowModeChooser(true)} /></View>;
 

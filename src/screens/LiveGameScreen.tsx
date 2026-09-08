@@ -3,6 +3,7 @@ import { ActivityIndicator, Alert, Animated, AppState, Easing, Modal, Pressable,
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import NetInfo from '@react-native-community/netinfo';
 import { AppText as Text } from '../components/AppText';
 import { categories, Category, isCategoryEligibleForRoll, repeatYahtzeeBonus, scoreCategoryForTurn, totalScore } from '../lib/game';
 import { resultMetrics } from '../lib/engagement';
@@ -11,6 +12,7 @@ import { createLiveGame, fetchLiveGame, fetchMyLiveGames, joinLiveGame, LiveGame
 import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
 import { DiceAnimation } from '../lib/diceAnimation';
+import QRCode from 'react-native-qrcode-svg';
 
 const activeGameKey = 'yahtzee.live-game.active.v1';
 const recordedPrefix = 'yahtzee.live-game.recorded.';
@@ -38,17 +40,20 @@ function Die({ value, held, disabled, rollToken, animation, opponentTurn, onPres
   return <Animated.View style={{ transform }}><Pressable disabled={disabled} onPress={onPress} style={[styles.die, opponentTurn && styles.opponentDie, held && styles.heldDie]}>{Array.from({ length: 9 }, (_, index) => <View key={index} style={styles.pipCell}>{pips[value]?.includes(index) && <View style={styles.pip} />}</View>)}</Pressable></Animated.View>;
 }
 
-export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpenAccount }: { requestedGameId?: string | null; diceAnimation: DiceAnimation; onClose: () => void; onOpenAccount: () => void }) {
+export function LiveGameScreen({ requestedGameId, requestedCode, diceAnimation, onClose, onOpenAccount }: { requestedGameId?: string | null; requestedCode?: string | null; diceAnimation: DiceAnimation; onClose: () => void; onOpenAccount: () => void }) {
   const { user } = useAuth();
   const [game, setGame] = useState<LiveGame | null>(null);
   const [resumeGames, setResumeGames] = useState<LiveGame[]>([]);
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(requestedCode?.replace(/\D/g, '').slice(0, 6) ?? '');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(Boolean(user));
   const [error, setError] = useState('');
   const [showScorecard, setShowScorecard] = useState(false);
   const [scorecardPlayer, setScorecardPlayer] = useState<'mine' | 'theirs'>('mine');
   const [rollToken, setRollToken] = useState(0);
+  const [connection, setConnection] = useState<'live' | 'reconnecting' | 'offline'>('reconnecting');
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [showInviteQr, setShowInviteQr] = useState(false);
   const holdQueue = useRef<Promise<void>>(Promise.resolve());
   const pendingHolds = useRef(0);
   const suppressNextRollAnimation = useRef(false);
@@ -68,16 +73,18 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
   }, [requestedGameId, user]);
 
   useEffect(() => { void loadLobby(); }, [loadLobby]);
+  useEffect(() => { if (requestedCode) setCode(requestedCode.replace(/\D/g, '').slice(0, 6)); }, [requestedCode]);
   useEffect(() => {
     if (!game || !['WAITING', 'ACTIVE'].includes(game.status)) return;
     let cancelled = false;
     let liveSubscription: { unsubscribe: () => void } | undefined;
-    const accept = (latest: LiveGame) => { if (!cancelled) { setGame((current) => { if (current && latest.updatedAt < current.updatedAt) return current; return pendingHolds.current > 0 && current ? { ...latest, held: current.held } : latest; }); setError(''); } };
-    const refresh = async () => { try { const latest = await fetchLiveGame(game.id); if (!cancelled) { setGame((current) => !current || latest.updatedAt >= current.updatedAt ? latest : current); setError(''); } } catch (caught) { if (!cancelled) setError(caught instanceof Error ? caught.message : 'Connection interrupted. Retrying…'); } };
-    void subscribeToLiveGame(game.id, accept, (caught) => { if (!cancelled) { setError(caught.message); void refresh(); } }).then((value) => { if (cancelled) value.unsubscribe(); else liveSubscription = value; }).catch((caught) => { if (!cancelled) setError(caught instanceof Error ? caught.message : 'Live updates were interrupted. Retrying…'); });
+    const accept = (latest: LiveGame) => { if (!cancelled) { setGame((current) => { if (current && latest.updatedAt < current.updatedAt) return current; return pendingHolds.current > 0 && current ? { ...latest, held: current.held } : latest; }); setLastSyncedAt(new Date()); setConnection('live'); setError(''); } };
+    const refresh = async () => { try { const latest = await fetchLiveGame(game.id); if (!cancelled) { setGame((current) => !current || latest.updatedAt >= current.updatedAt ? latest : current); setLastSyncedAt(new Date()); setConnection('live'); setError(''); } } catch (caught) { if (!cancelled) { setConnection('reconnecting'); setError(caught instanceof Error ? caught.message : 'Connection interrupted. Retrying…'); } } };
+    void subscribeToLiveGame(game.id, accept, (caught) => { if (!cancelled) { setConnection('reconnecting'); setError(caught.message); void refresh(); } }).then((value) => { if (cancelled) value.unsubscribe(); else liveSubscription = value; }).catch((caught) => { if (!cancelled) { setConnection('reconnecting'); setError(caught instanceof Error ? caught.message : 'Live updates were interrupted. Retrying…'); } });
     const timer = setInterval(() => void refresh(), 5000);
     const appStateSubscription = AppState.addEventListener('change', (state) => { if (state === 'active') void refresh(); });
-    return () => { cancelled = true; clearInterval(timer); appStateSubscription.remove(); liveSubscription?.unsubscribe(); };
+    const networkSubscription = NetInfo.addEventListener((state) => setConnection((current) => state.isConnected && state.isInternetReachable !== false ? current === 'offline' ? 'reconnecting' : current : 'offline'));
+    return () => { cancelled = true; clearInterval(timer); appStateSubscription.remove(); networkSubscription(); liveSubscription?.unsubscribe(); };
   }, [game?.id, game?.status]);
 
   useEffect(() => {
@@ -126,6 +133,7 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
   };
   const leave = () => Alert.alert('Leave remote game?', 'This ends the game for both players.', [{ text: 'Keep Playing', style: 'cancel' }, { text: 'Leave Game', style: 'destructive', onPress: () => void action({ type: 'LEAVE' }) }]);
   const closeGame = async () => { await AsyncStorage.removeItem(activeGameKey); setGame(null); setResumeGames([]); void loadLobby(); };
+  const rematch = async () => { if (!game) return; setBusy(true); setError(''); try { await openGame(await updateLiveGame(game.id, { type: 'REMATCH' })); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Unable to start a rematch.'); } finally { setBusy(false); } };
 
   if (!user) return <View style={styles.center}><Ionicons name="people-outline" size={50} color={colors.cyan} /><Text style={styles.emptyTitle}>Sign in to play remotely</Text><Text style={styles.emptyCopy}>Remote games connect two accounts and can notify you when your turn begins.</Text><Pressable onPress={onOpenAccount} style={styles.primary}><Text style={styles.primaryText}>Open Account</Text></Pressable><Pressable onPress={onClose}><Text style={styles.link}>Back to Games</Text></Pressable></View>;
   if (loading) return <View style={styles.center}><ActivityIndicator color={colors.cyan} /><Text style={styles.emptyCopy}>Loading remote games…</Text></View>;
@@ -134,7 +142,7 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
     <View style={styles.topRow}><View><Text style={styles.eyebrow}>TWO DEVICES</Text><Text style={styles.title}>Remote game</Text></View><Pressable onPress={onClose} style={styles.otherGamesButton}><Ionicons name="grid-outline" size={17} color={colors.mint} /><Text style={styles.otherGamesText}>Other games</Text></Pressable></View>
     <View style={styles.hero}><Ionicons name="phone-portrait-outline" size={28} color={colors.cyan} /><View style={styles.heroCopy}><Text style={styles.heroTitle}>Take turns from anywhere</Text><Text style={styles.copy}>Create a game to share its code, or enter a friend’s six-digit code.</Text></View></View>
     {!game && resumeGames.map((item) => <Pressable key={item.id} onPress={() => void openGame(item)} style={styles.resumeCard}><View><Text style={styles.cardTitle}>{item.status === 'WAITING' ? 'Waiting for opponent' : `Game with ${item.hostUserId === user.userId ? item.guestUsername : item.hostUsername}`}</Text><Text style={styles.cardMeta}>Code {item.code} · {item.currentUserId === user.userId ? 'Your turn' : 'Their turn'}</Text></View><Ionicons name="chevron-forward" size={20} color={colors.cyan} /></Pressable>)}
-    {game ? <View style={styles.inviteCard}><View style={styles.inviteHeader}><View style={styles.waitIconSmall}><Ionicons name="hourglass-outline" size={21} color={colors.yellow} /></View><View style={styles.heroCopy}><Text style={styles.createTitle}>Waiting for another player</Text><Text style={styles.copy}>Share this code with a signed-in friend.</Text></View></View><Text accessibilityLabel={`Game code ${game.code.split('').join(' ')}`} style={styles.lobbyCode}>{game.code}</Text><View style={styles.inviteActions}><Pressable onPress={() => void Share.share({ title: 'Join my Yahtzee game', message: `Join my Yahtzee Hub remote game with code ${game.code}.` })} style={styles.shareButton}><Ionicons name="share-outline" size={18} color={colors.background} /><Text style={styles.primaryText}>Share code</Text></Pressable><Pressable onPress={leave} style={styles.cancelButton}><Ionicons name="close-outline" size={18} color={colors.pink} /><Text style={styles.dangerText}>Cancel</Text></Pressable></View></View> : <Pressable disabled={busy} onPress={() => void create()} style={[styles.createCard, busy && styles.disabled]}><View style={styles.createIcon}><Ionicons name="add" size={25} color={colors.background} /></View><View style={styles.heroCopy}><Text style={styles.createTitle}>Start a game</Text><Text style={styles.copy}>Get a code and invite another player.</Text></View></Pressable>}
+    {game ? <View style={styles.inviteCard}><View style={styles.inviteHeader}><View style={styles.waitIconSmall}><Ionicons name="hourglass-outline" size={21} color={colors.yellow} /></View><View style={styles.heroCopy}><Text style={styles.createTitle}>Waiting for another player</Text><Text style={styles.copy}>Share this link or let your friend scan the code. Invitations expire after 24 hours.</Text></View></View><Text accessibilityLabel={`Game code ${game.code.split('').join(' ')}`} style={styles.lobbyCode}>{game.code}</Text>{showInviteQr && <View style={styles.inviteQr}><QRCode value={`https://yahtzee.ijrhservices.co.uk/play?join=${game.code}`} size={150} color={colors.background} backgroundColor="#ffffff" /></View>}<View style={styles.inviteActions}><Pressable onPress={() => void Share.share({ title: 'Join my Yahtzee game', message: `Join my Yahtzee Hub remote game: https://yahtzee.ijrhservices.co.uk/play?join=${game.code}\nCode: ${game.code}` })} style={styles.shareButton}><Ionicons name="share-outline" size={18} color={colors.background} /><Text style={styles.primaryText}>Share</Text></Pressable><Pressable onPress={() => setShowInviteQr((visible) => !visible)} style={styles.qrInviteButton}><Ionicons name={showInviteQr ? 'close-outline' : 'qr-code-outline'} size={18} color={colors.yellow} /><Text style={styles.qrInviteText}>{showInviteQr ? 'Hide QR' : 'QR'}</Text></Pressable><Pressable onPress={leave} style={styles.cancelButton}><Ionicons name="close-outline" size={18} color={colors.pink} /><Text style={styles.dangerText}>Cancel</Text></Pressable></View></View> : <Pressable disabled={busy} onPress={() => void create()} style={[styles.createCard, busy && styles.disabled]}><View style={styles.createIcon}><Ionicons name="add" size={25} color={colors.background} /></View><View style={styles.heroCopy}><Text style={styles.createTitle}>Start a game</Text><Text style={styles.copy}>Get a code and invite another player.</Text></View></Pressable>}
     <View style={styles.joinCard}><Text style={styles.cardTitle}>Join with a code</Text><TextInput accessibilityLabel="Six-digit game code" value={code} onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" maxLength={6} placeholder="000000" placeholderTextColor={colors.muted} style={styles.codeInput} /><Pressable disabled={busy || code.length !== 6} onPress={() => void join()} style={[styles.primary, (busy || code.length !== 6) && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Joining…' : 'Join Game'}</Text></Pressable></View>
     {error ? <Text style={styles.error}>{error}</Text> : null}
   </ScrollView>;
@@ -155,9 +163,15 @@ export function LiveGameScreen({ requestedGameId, diceAnimation, onClose, onOpen
   const scorecardScores = scorecardPlayer === 'mine' ? mine : theirs;
   const outcome = game.status === 'COMPLETED' ? game.winnerUserId === null ? 'Draw game' : game.winnerUserId === user.userId ? 'You won!' : `${opponent} won` : game.status === 'ABANDONED' ? game.endedByUserId === user.userId ? 'You left the game' : `${opponent ?? 'Your opponent'} left` : '';
 
-  if (game.status === 'COMPLETED' || game.status === 'ABANDONED') return <ScrollView contentContainerStyle={styles.content}><View style={styles.resultCard}><Ionicons name={game.status === 'COMPLETED' ? 'trophy-outline' : 'exit-outline'} size={42} color={game.status === 'COMPLETED' ? colors.yellow : colors.pink} /><Text style={styles.emptyTitle}>{outcome}</Text>{game.status === 'COMPLETED' && <Text style={styles.resultScore}>{myTotal} – {theirTotal}</Text>}<Text style={styles.emptyCopy}>{game.hostUsername} vs {game.guestUsername}</Text><Pressable onPress={() => void closeGame()} style={styles.primary}><Text style={styles.primaryText}>Back to Remote Games</Text></Pressable></View></ScrollView>;
+  if (game.status === 'COMPLETED' || game.status === 'ABANDONED') {
+    const scoreFor = (scores: typeof mine, category: Category) => scores.find((entry) => entry.category === category)?.score ?? 0;
+    const biggestSwing = categories.reduce((best, category) => Math.abs(scoreFor(mine, category) - scoreFor(theirs, category)) > Math.abs(best.difference) ? { category, difference: scoreFor(mine, category) - scoreFor(theirs, category) } : best, { category: 'Chance' as Category, difference: 0 });
+    const myYahtzees = mine.filter((entry) => entry.category === 'Yahtzee' && entry.score === 50).length + mine.filter((entry) => entry.yahtzeeBonus).length;
+    const theirYahtzees = theirs.filter((entry) => entry.category === 'Yahtzee' && entry.score === 50).length + theirs.filter((entry) => entry.yahtzeeBonus).length;
+    return <ScrollView contentContainerStyle={styles.content}><View style={styles.resultCard}><Ionicons name={game.status === 'COMPLETED' ? 'trophy-outline' : 'exit-outline'} size={42} color={game.status === 'COMPLETED' ? colors.yellow : colors.pink} /><Text style={styles.emptyTitle}>{outcome}</Text>{game.status === 'COMPLETED' && <><Text style={styles.resultScore}>{myTotal} – {theirTotal}</Text><View style={styles.resultHighlights}><View style={styles.resultHighlight}><Text style={styles.resultHighlightValue}>{Math.abs(myTotal - theirTotal)}</Text><Text style={styles.insightCaption}>POINT MARGIN</Text></View><View style={styles.resultHighlight}><Text style={styles.resultHighlightValue}>{myYahtzees}–{theirYahtzees}</Text><Text style={styles.insightCaption}>YAHTZEES</Text></View><View style={styles.resultHighlight}><Text style={styles.resultHighlightValue}>{labels[biggestSwing.category]}</Text><Text style={styles.insightCaption}>BIGGEST SWING</Text></View></View><View style={styles.finalScorecard}><View style={styles.finalScoreHeader}><Text style={styles.finalCategory}>Category</Text><Text style={styles.finalYou}>You</Text><Text numberOfLines={1} style={styles.finalOpponent}>{opponent}</Text></View>{categories.map((category) => <View key={category} style={styles.finalScoreRow}><Text style={styles.finalCategory}>{labels[category]}</Text><Text style={styles.finalYou}>{scoreFor(mine, category)}</Text><Text style={styles.finalOpponent}>{scoreFor(theirs, category)}</Text></View>)}</View><View style={styles.resultActions}><Pressable disabled={busy} onPress={() => void rematch()} style={styles.rematchButton}><Ionicons name="refresh" size={17} color={colors.background} /><Text style={styles.primaryText}>Rematch</Text></Pressable><Pressable onPress={() => void Share.share({ title: 'Yahtzee Hub result', message: `${game.hostUsername} ${totalScore(game.hostScores)} – ${totalScore(game.guestScores)} ${game.guestUsername}. Biggest swing: ${labels[biggestSwing.category]}.` })} style={styles.resultShareButton}><Ionicons name="share-outline" size={17} color={colors.cyan} /><Text style={styles.scorecardButtonText}>Share</Text></Pressable></View></>}<Text style={styles.emptyCopy}>{game.hostUsername} vs {game.guestUsername}</Text><Pressable onPress={() => void closeGame()} style={styles.primary}><Text style={styles.primaryText}>Back to Remote Games</Text></Pressable></View>{error ? <Text style={styles.error}>{error}</Text> : null}</ScrollView>;
+  }
 
-  return <View style={styles.game}><View style={[styles.matchupHeader, !myTurn && styles.opponentScoreStrip]}><View style={styles.matchupScores}><Text style={styles.compactPlayer}>You <Text style={styles.scoreValue}>{myTotal}</Text></Text><Text style={styles.versus}>VS</Text><Text numberOfLines={1} style={[styles.compactPlayer, !myTurn && styles.opponentText]}>{opponent} <Text style={[styles.scoreValue, !myTurn && styles.opponentScore]}>{theirTotal}</Text></Text></View><View style={styles.matchupMeta}><Text style={[styles.matchupTurn, !myTurn && styles.opponentText]}>{myTurn ? 'Your turn' : `${opponent}’s turn`}</Text><Text style={styles.roundText}>Round {game.round} of 13</Text></View></View>
+  return <View style={styles.game}><View style={[styles.connectionBar, connection !== 'live' && styles.connectionWarning]}><View style={[styles.connectionDot, connection === 'live' ? styles.connectionDotLive : connection === 'offline' ? styles.connectionDotOffline : styles.connectionDotWaiting]} /><Text style={styles.connectionText}>{connection === 'live' ? 'Live' : connection === 'offline' ? 'Offline · your game is safe' : 'Reconnecting…'}{lastSyncedAt && connection !== 'live' ? ` · synced ${lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</Text></View><View style={[styles.matchupHeader, !myTurn && styles.opponentScoreStrip]}><View style={styles.matchupScores}><Text style={styles.compactPlayer}>You <Text style={styles.scoreValue}>{myTotal}</Text></Text><Text style={styles.versus}>VS</Text><Text numberOfLines={1} style={[styles.compactPlayer, !myTurn && styles.opponentText]}>{opponent} <Text style={[styles.scoreValue, !myTurn && styles.opponentScore]}>{theirTotal}</Text></Text></View><View style={styles.matchupMeta}><Text style={[styles.matchupTurn, !myTurn && styles.opponentText]}>{myTurn ? 'Your turn' : `${opponent}’s turn`}</Text><Text style={styles.roundText}>Round {game.round} of 13</Text></View></View>
     <View style={styles.diceRow}>{game.dice.map((die, index) => <Die key={index} value={die} held={game.held.includes(index)} disabled={!myTurn || !game.hasRolled || busy} rollToken={rollToken} animation={diceAnimation} opponentTurn={!myTurn} onPress={() => toggleHold(index)} />)}</View>
     <View style={styles.rollMeta}><Text style={[styles.rollGuidance, !myTurn && styles.opponentText]}>{myTurn ? (game.hasRolled ? 'TAP DICE TO HOLD' : 'ROLL TO BEGIN') : `WATCHING ${(opponent ?? 'OPPONENT').toUpperCase()}`}</Text><View style={styles.rollMetaRight}><View style={styles.rollDots}>{[0,1,2].map((index) => <View key={index} style={[styles.rollDot, index < game.rollsLeft && (myTurn ? styles.rollDotActive : styles.opponentRollDot)]} />)}</View></View></View>
     {myTurn && <Pressable disabled={busy || game.rollsLeft === 0} onPress={() => void action({ type: 'ROLL' })} style={[styles.rollButton, game.rollsLeft === 0 && styles.disabled]}><Ionicons name="dice" size={21} color={colors.background} /><Text style={styles.rollText}>{game.hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></Pressable>}
@@ -196,4 +210,25 @@ const styles = StyleSheet.create({
   turnStats: { minHeight: 42, paddingHorizontal: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#263337' },
   turnStatLabel: { color: colors.muted, fontSize: 11, fontWeight: '800' },
   turnStatValue: { color: colors.yellow, fontSize: 15, fontWeight: '900' },
+  resultHighlights: { width: '100%', flexDirection: 'row', gap: 7, marginTop: 12 },
+  resultHighlight: { flex: 1, minHeight: 58, alignItems: 'center', justifyContent: 'center', padding: 7, borderRadius: 10, backgroundColor: colors.background },
+  resultHighlightValue: { color: colors.yellow, fontSize: 14, fontWeight: '900', textAlign: 'center' },
+  insightCaption: { color: colors.muted, fontSize: 7, fontWeight: '900', marginTop: 3 },
+  finalScorecard: { width: '100%', marginTop: 12, padding: 9, borderWidth: 1, borderColor: '#315a5e', borderRadius: 11, backgroundColor: colors.background },
+  finalScoreHeader: { minHeight: 28, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#315a5e' },
+  finalScoreRow: { minHeight: 25, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#202d30' },
+  finalCategory: { flex: 1.5, color: colors.mint, fontSize: 9, fontWeight: '800' },
+  finalYou: { flex: 1, color: colors.cyan, fontSize: 10, fontWeight: '900', textAlign: 'center' },
+  finalOpponent: { flex: 1, color: '#9dffb7', fontSize: 10, fontWeight: '900', textAlign: 'center' },
+  resultActions: { width: '100%', flexDirection: 'row', gap: 8, marginTop: 12 },
+  rematchButton: { flex: 1, minHeight: 44, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: colors.cyan },
+  resultShareButton: { flex: 1, minHeight: 44, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: colors.cyan },
+  inviteQr: { alignSelf: 'center', padding: 8, marginBottom: 13, borderRadius: 10, backgroundColor: '#ffffff' },
+  qrInviteButton: { minHeight: 46, paddingHorizontal: 10, borderRadius: 11, borderWidth: 1, borderColor: colors.yellow, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' },
+  qrInviteText: { color: colors.yellow, fontSize: 10, fontWeight: '900' },
+  connectionBar: { minHeight: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: '#112326' },
+  connectionWarning: { backgroundColor: '#29260f' },
+  connectionDot: { width: 6, height: 6, borderRadius: 3 },
+  connectionDotLive: { backgroundColor: '#5cff88' }, connectionDotWaiting: { backgroundColor: colors.yellow }, connectionDotOffline: { backgroundColor: colors.pink },
+  connectionText: { color: colors.muted, fontSize: 8, fontWeight: '800' },
 });

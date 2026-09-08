@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, AppState, Image, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, AppState, Image, Linking, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import NetInfo from '@react-native-community/netinfo';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -97,7 +97,7 @@ export default function App() {
   const [canContinueGame, setCanContinueGame] = useState(false);
   const [gameSettingsOpen, setGameSettingsOpen] = useState(true);
   const [dailyLeaderboardRequest, setDailyLeaderboardRequest] = useState(0);
-  const [liveGameRequest, setLiveGameRequest] = useState<{ token: number; gameId?: string | null }>({ token: 0 });
+  const [liveGameRequest, setLiveGameRequest] = useState<{ token: number; gameId?: string | null; code?: string | null }>({ token: 0 });
   const headerTitle = tab === 'game' ? gameHeaderTitle : tab === 'stats' ? 'Stats' : tab === 'account' ? 'Account' : tab === 'admin' ? 'Admin' : 'About';
 
   useEffect(() => {
@@ -108,6 +108,18 @@ export default function App() {
       setShowOnboarding(onboarding !== 'true');
       setRemindersEnabled(reminders.enabled); setReminderHour(reminders.hour);
     });
+  }, []);
+  useEffect(() => {
+    const openInvite = (url: string | null) => {
+      if (!url) return;
+      const match = url.match(/(?:join[\/=]|[?&]join=)(\d{6})/i);
+      if (!match) return;
+      setTab('game');
+      setLiveGameRequest((value) => ({ token: value.token + 1, code: match[1] }));
+    };
+    void Linking.getInitialURL().then(openInvite);
+    const subscription = Linking.addEventListener('url', ({ url }) => openInvite(url));
+    return () => subscription.remove();
   }, []);
   useEffect(() => {
     const openNotification = (destination: unknown, gameId?: unknown) => { if (destination === 'daily') { setTab('game'); setDailyLaunchRequest((value) => value + 1); } else if (destination === 'stats') setTab('stats'); else if (destination === 'live-game') { setTab('game'); setLiveGameRequest((value) => ({ token: value.token + 1, gameId: typeof gameId === 'string' ? gameId : null })); } };

@@ -5,8 +5,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { colors } from '../theme';
 
 const pages = [
-  { icon: 'dice-outline' as const, eyebrow: 'WELCOME', title: 'Yahtzee, your way', copy: 'Play digitally, challenge the computer, share one phone, or keep score while using real dice.' },
+  { icon: 'dice-outline' as const, eyebrow: 'WELCOME', title: 'Yahtzee, your way', copy: 'Play digitally, challenge the computer, share one phone, or keep score while using real dice. Core games work without an account.' },
   { icon: 'sunny-outline' as const, eyebrow: 'EVERY DAY', title: 'One shared challenge', copy: 'Everyone receives the same candidate dice. Your holds and category choices decide your place on today’s leaderboard.' },
+  { icon: 'people-outline' as const, eyebrow: 'PLAY TOGETHER', title: 'A game across two devices', copy: 'Create a Remote Game, share its link or code, and take alternate rounds. You can watch live or return when your turn is ready.' },
   { icon: 'trophy-outline' as const, eyebrow: 'YOUR PROGRESS', title: 'Scores worth returning for', copy: 'Create an optional account to save results, build streaks, earn achievements and compete across web and mobile.' },
   { icon: 'notifications-outline' as const, eyebrow: 'STAY ON TRACK', title: 'A nudge at 7:00 pm', copy: 'Turn on one local reminder when the Daily Challenge is waiting. You can change the time or switch it off from Account.' },
 ];
