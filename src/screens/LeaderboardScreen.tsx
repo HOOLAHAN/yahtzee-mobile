@@ -99,7 +99,7 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
         const indexed = details.filter((result) => result.mode === 'SOLO').map((result) => ({ ...result, timestamp: result.completedAt } as LeaderboardEntry));
         const indexedIds = new Set(indexed.map((result) => result.id));
         if (request !== loadRequest.current) return;
-        setScores(topScoresPerUser(filterResultsByPeriod([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))], period), 3));
+        setScores(topScoresPerUser(filterResultsByPeriod([...indexed, ...legacy.filter((score) => !indexedIds.has(score.id))], period), 1));
       } else {
         const daily = period === 'today' ? await fetchDailyResults(localDateKey(), 100, dailyLeaderboardRequest > 0 ? user?.userId : undefined) : filterResultsByPeriod(await fetchAllDailyResults(1000), period);
         if (request !== loadRequest.current) return;

@@ -11,6 +11,7 @@ const appStoreUrl = 'https://apps.apple.com/gb/app/yahtzee-hub/id6794910138';
 
 const playModes: { title: string; description: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
   { title: 'Solo', description: 'Play a complete 13-round game, save your score and climb the leaderboard.', icon: 'person-outline', color: playerProfiles[0].accent },
+  { title: 'Daily Challenge', description: 'Play the same fixed roll sequence as everyone else, then compare your score and build a streak.', icon: 'sunny-outline', color: colors.yellow },
   { title: 'Vs Computer', description: 'Battle an opponent that visibly rolls, holds combinations and makes strategic category choices.', icon: 'hardware-chip-outline', color: playerProfiles[1].accent },
   { title: 'Pass & Play', description: 'Share one device for a local two-player game with separate turns and scorecards.', icon: 'people-outline', color: playerProfiles[2].accent },
   { title: 'Remote Game', description: 'Invite a signed-in friend by code, watch each other play and receive an alert when your turn begins.', icon: 'globe-outline', color: colors.yellow },
