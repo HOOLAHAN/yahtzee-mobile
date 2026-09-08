@@ -792,7 +792,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   };
 
   if (showModeChooser) return <GameModeChooser onChange={changeMode} />;
-  if (remoteMode) return <LiveGameScreen requestedGameId={liveGameRequest?.gameId} onClose={() => { setRemoteMode(false); setShowModeChooser(true); }} onOpenAccount={() => onOpenAccount?.()} />;
+  if (remoteMode) return <LiveGameScreen requestedGameId={liveGameRequest?.gameId} diceAnimation={diceAnimation} onClose={() => { setRemoteMode(false); setShowModeChooser(true); }} onOpenAccount={() => onOpenAccount?.()} />;
   if (scorekeeperMode) return <View style={styles.gameContainer}><RealDiceScreen onOpenSettings={() => setShowModeChooser(true)} /></View>;
   if (virtualDiceMode) return <View style={styles.gameContainer}><VirtualDiceScreen diceAnimation={diceAnimation} onOpenSettings={() => setShowModeChooser(true)} /></View>;
 
