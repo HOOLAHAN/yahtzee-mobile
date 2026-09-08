@@ -47,8 +47,19 @@ async function request<T>(query: string, field: string, variables?: Record<strin
   throw new Error(result.errors?.map((error) => error.message).filter(Boolean).join('\n') || 'Unable to update the remote game.');
 }
 
-const parseJson = <T>(value: T | string): T => typeof value === 'string' ? JSON.parse(value) as T : value;
-const parseGame = (game: LiveGame): LiveGame => ({ ...game, dice: parseJson(game.dice), held: parseJson(game.held), hostScores: parseJson(game.hostScores), guestScores: parseJson(game.guestScores) });
+const parseJsonArray = <T>(value: T[] | string | null | undefined): T[] => {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+};
+const parseGame = (game: LiveGame): LiveGame => ({
+  ...game,
+  dice: parseJsonArray<DieFace>(game.dice),
+  held: parseJsonArray<number>(game.held),
+  hostScores: parseJsonArray<ScoreEntry>(game.hostScores),
+  guestScores: parseJsonArray<ScoreEntry>(game.guestScores),
+});
 
 export async function createLiveGame() {
   return parseGame(await request<LiveGame>(`mutation CreateLiveGame { createLiveGame { ${fields} } }`, 'createLiveGame'));
@@ -79,7 +90,11 @@ export async function subscribeToLiveGame(gameId: string, onGame: (game: LiveGam
     variables: { id: gameId },
     authMode: 'userPool',
     authToken: token,
-  }) as unknown as { subscribe: (observer: { next: (event: { data?: { onLiveGameChanged?: LiveGame | null } }) => void; error: (error: unknown) => void }) => { unsubscribe: () => void } };
+  }) as unknown as { subscribe?: (observer: { next: (event: { data?: { onLiveGameChanged?: LiveGame | null } }) => void; error: (error: unknown) => void }) => { unsubscribe: () => void } };
+  if (typeof operation?.subscribe !== 'function') {
+    onError(new Error('Live stream unavailable. Reconnecting with refresh…'));
+    return { unsubscribe: () => undefined };
+  }
   return operation.subscribe({
     next: (event) => { if (event.data?.onLiveGameChanged) onGame(parseGame(event.data.onLiveGameChanged)); },
     error: (error) => onError(error instanceof Error ? error : new Error('Live updates were interrupted. Reconnecting…')),
