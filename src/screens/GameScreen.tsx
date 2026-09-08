@@ -36,6 +36,7 @@ import { resultMetrics } from '../lib/engagement';
 import { createGameResult, DailyRoundStanding, fetchDailyResults, GameResult, submitDailyRoundProgress } from '../services/gameResults';
 import { defaultDiceAnimation, DiceAnimation } from '../lib/diceAnimation';
 import { LiveGameScreen } from './LiveGameScreen';
+import { fetchMyLiveGames } from '../services/liveGames';
 
 const initialDice: DieFace[] = [1, 1, 1, 1, 1];
 const storageKey = 'yahtzee.active-game.v1';
@@ -85,7 +86,7 @@ export function AnimationPreview({ animation, active, token }: { animation: Dice
   return <View style={styles.animationPreview}><AnimatedDie value={5} index={0} held={false} rollToken={active ? token : 0} canHold={false} reduceMotion={false} animation={animation} compact accentColor={colors.cyan} heldColor={colors.yellow} softColor={colors.background} onPress={() => undefined} /></View>;
 }
 
-function GameModeChooser({ onChange }: { onChange: (mode: GameMode) => void }) {
+function GameModeChooser({ onChange, remoteTurns, dailyOutstanding }: { onChange: (mode: GameMode) => void; remoteTurns: number; dailyOutstanding: boolean }) {
   const gameOptions: { mode: GameMode; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { mode: 'solo', label: 'Solo', description: 'Play a classic game at your own pace and submit your final score.', icon: 'person-outline' },
     { mode: 'daily', label: 'Daily Challenge', description: 'Play today’s fixed roll sequence. Everyone gets the same candidate dice each roll; your holds and scoring choices decide the result.', icon: 'sunny-outline' },
@@ -97,7 +98,7 @@ function GameModeChooser({ onChange }: { onChange: (mode: GameMode) => void }) {
     { mode: 'virtual', label: 'Dice Roller', description: 'Roll one or two dice for any tabletop game.', icon: 'dice-outline' },
     { mode: 'real', label: 'Scorecard', description: 'Use physical dice while the app manages every player.', icon: 'calculator-outline' },
   ];
-  const choice = (option: typeof gameOptions[number], tool = false) => <Pressable key={option.mode} accessibilityRole="button" onPress={() => onChange(option.mode)} style={({ pressed }) => [styles.gameChoice, tool && styles.toolChoice, pressed && styles.choicePressed]}><View style={[styles.choiceIcon, tool && styles.toolIcon]}><Ionicons name={option.icon} size={23} color={tool ? colors.yellow : colors.cyan} /></View><View style={styles.choiceCopy}><Text style={styles.choiceTitle}>{option.label}</Text><Text style={styles.choiceDescription}>{option.description}</Text></View><View style={[styles.choiceArrow, tool && styles.toolArrow]}><Ionicons name="arrow-forward" size={18} color={tool ? colors.background : colors.cyan} /></View></Pressable>;
+  const choice = (option: typeof gameOptions[number], tool = false) => { const badge = option.mode === 'remote' && remoteTurns > 0 ? remoteTurns === 1 ? 'YOUR TURN' : `${remoteTurns} TURNS` : option.mode === 'daily' && dailyOutstanding ? 'TODAY' : ''; return <Pressable key={option.mode} accessibilityRole="button" onPress={() => onChange(option.mode)} style={({ pressed }) => [styles.gameChoice, tool && styles.toolChoice, pressed && styles.choicePressed]}><View style={[styles.choiceIcon, tool && styles.toolIcon]}><Ionicons name={option.icon} size={23} color={tool ? colors.yellow : colors.cyan} /></View><View style={styles.choiceCopy}><View style={styles.choiceTitleRow}><Text style={styles.choiceTitle}>{option.label}</Text>{Boolean(badge) && <View style={[styles.choiceBadge, option.mode === 'remote' && styles.remoteChoiceBadge]}><Text style={styles.choiceBadgeText}>{badge}</Text></View>}</View><Text style={styles.choiceDescription}>{option.description}</Text></View><View style={[styles.choiceArrow, tool && styles.toolArrow]}><Ionicons name="arrow-forward" size={18} color={tool ? colors.background : colors.cyan} /></View></Pressable>; };
   return <ScrollView contentContainerStyle={styles.chooserContent} showsVerticalScrollIndicator={false}><Text style={styles.chooserEyebrow}>Game selection</Text><Text style={styles.chooserTitle}>Choose how to play</Text><Text style={styles.chooserIntro}>Start a Yahtzee game or open a tool for your physical dice.</Text><Text style={styles.chooserSection}>Play Yahtzee</Text><View style={styles.choiceList}>{gameOptions.map((option) => choice(option))}</View><Text style={styles.chooserSection}>Dice tools</Text><View style={styles.choiceList}>{tools.map((option) => choice(option, true))}</View></ScrollView>;
 }
 
@@ -262,6 +263,8 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   const [dailyRoundStanding, setDailyRoundStanding] = useState<DailyRoundStanding | null>(null);
   const [dailyStandingLoading, setDailyStandingLoading] = useState(false);
   const [showModeChooser, setShowModeChooser] = useState(true);
+  const [remoteTurns, setRemoteTurns] = useState(0);
+  const [dailyOutstanding, setDailyOutstanding] = useState(false);
   const [hasActiveMode, setHasActiveMode] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState<Player>(1);
   const [viewingPlayer, setViewingPlayer] = useState<Player>(1);
@@ -295,6 +298,29 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   useEffect(() => { if (resumeRequest && hasActiveMode) setShowModeChooser(false); }, [hasActiveMode, resumeRequest]);
   useEffect(() => { if (liveGameRequest?.token) { setRemoteMode(true); setHasActiveMode(true); setShowModeChooser(false); } }, [liveGameRequest]);
   useEffect(() => { void AsyncStorage.getItem('yahtzee.tip.hold-dice.v1').then((value) => setHoldTipSeen(value === 'true')); }, []);
+  useEffect(() => {
+    if (!showModeChooser) return;
+    let cancelled = false;
+    const refreshAttention = async () => {
+      const today = localDateKey();
+      const completedOnDevice = await AsyncStorage.getItem(`yahtzee.daily.completed.${today}.${user?.userId ?? 'guest'}`);
+      let completed = completedOnDevice === 'true';
+      if (user) {
+        try {
+          const [games, dailyResults] = await Promise.all([fetchMyLiveGames(), fetchDailyResults(today)]);
+          if (cancelled) return;
+          setRemoteTurns(games.filter((game) => game.status === 'ACTIVE' && game.currentUserId === user.userId).length);
+          completed ||= dailyResults.some((result) => result.userId === user.userId);
+          if (completed) void AsyncStorage.setItem(`yahtzee.daily.completed.${today}.${user.userId}`, 'true');
+        } catch { /* Keep local badge state when the network is unavailable. */ }
+      } else if (!cancelled) setRemoteTurns(0);
+      if (!cancelled) setDailyOutstanding(!completed);
+    };
+    void refreshAttention();
+    const timer = setInterval(() => void refreshAttention(), 10000);
+    const appState = AppState.addEventListener('change', (state) => { if (state === 'active') void refreshAttention(); });
+    return () => { cancelled = true; clearInterval(timer); appState.remove(); };
+  }, [showModeChooser, user]);
   useEffect(() => {
     const title = showModeChooser ? 'Yahtzee!' : remoteMode ? 'Remote Game' : scorekeeperMode ? 'Scorecard' : virtualDiceMode ? 'Dice Roller' : dailyMode ? 'Daily Challenge' : computerOpponent ? 'Vs Computer' : twoPlayer ? 'Pass & Play' : 'Single Player';
     onHeaderTitleChange?.(title);
@@ -791,7 +817,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   </>;
   };
 
-  if (showModeChooser) return <GameModeChooser onChange={changeMode} />;
+  if (showModeChooser) return <GameModeChooser onChange={changeMode} remoteTurns={remoteTurns} dailyOutstanding={dailyOutstanding} />;
   if (remoteMode) return <LiveGameScreen requestedGameId={liveGameRequest?.gameId} diceAnimation={diceAnimation} onClose={() => { setRemoteMode(false); setShowModeChooser(true); }} onOpenAccount={() => onOpenAccount?.()} />;
   if (scorekeeperMode) return <View style={styles.gameContainer}><RealDiceScreen onOpenSettings={() => setShowModeChooser(true)} /></View>;
   if (virtualDiceMode) return <View style={styles.gameContainer}><VirtualDiceScreen diceAnimation={diceAnimation} onOpenSettings={() => setShowModeChooser(true)} /></View>;
@@ -878,7 +904,7 @@ const styles = StyleSheet.create({
   toast: { position: 'absolute', zIndex: 20, top: '40%', alignSelf: 'center', width: '82%', maxWidth: 340, minHeight: 60, paddingHorizontal: 13, paddingVertical: 10, borderRadius: 14, borderWidth: 1, borderColor: '#33747b', backgroundColor: '#142528', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, shadowColor: colors.cyan, shadowOpacity: 0.3, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 12 }, lockToast: { width: '76%', maxWidth: 310, minHeight: 54, paddingVertical: 8 }, standardToastIcon: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: '#203c40' }, toastCopy: { flexShrink: 1, alignItems: 'center' }, toastText: { color: colors.mint, fontSize: 12, lineHeight: 16, fontWeight: '900', textAlign: 'center', flexShrink: 1 }, achievementToast: { width: '92%', maxWidth: 390, minHeight: 92, borderWidth: 2, borderColor: colors.yellow, backgroundColor: '#26152d', shadowColor: colors.pink, shadowOpacity: .75, shadowRadius: 18, elevation: 18 }, achievementToastIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.yellow, backgroundColor: '#3a2d12' }, achievementToastTitle: { color: colors.yellow, fontSize: 17, fontWeight: '900', letterSpacing: 1.2 }, achievementToastText: { color: colors.mint, fontSize: 11, lineHeight: 16, marginTop: 2 },
   turnControls: { paddingHorizontal: 14, paddingTop: 6, paddingBottom: 8, backgroundColor: colors.background, borderBottomColor: '#253438', borderBottomWidth: 1 },
   dailyTurnControls: { backgroundColor: '#121306', borderBottomColor: '#656a13' },
-  chooserContent: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 38 }, chooserEyebrow: { color: colors.pink, fontSize: 11, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' }, chooserTitle: { color: colors.yellow, fontSize: 27, fontWeight: '900', marginTop: 4 }, chooserIntro: { color: colors.mint, fontSize: 13, lineHeight: 19, marginTop: 5, maxWidth: 430 }, chooserSection: { color: colors.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.3, textTransform: 'uppercase', marginTop: 22, marginBottom: 8 }, choiceList: { gap: 9 }, gameChoice: { minHeight: 94, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 15, borderColor: '#2d3c40', borderWidth: 1, backgroundColor: colors.surface }, toolChoice: { minHeight: 86, backgroundColor: '#101516' }, choicePressed: { opacity: 0.78, transform: [{ scale: 0.985 }] }, choiceIcon: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#20383b' }, toolIcon: { backgroundColor: '#2a2d14' }, choiceCopy: { flex: 1 }, choiceTitle: { color: colors.white, fontSize: 16, fontWeight: '900' }, choiceDescription: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 4 }, choiceArrow: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderColor: colors.cyan, borderWidth: 1 }, toolArrow: { backgroundColor: colors.yellow, borderColor: colors.yellow },
+  chooserContent: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 38 }, chooserEyebrow: { color: colors.pink, fontSize: 11, fontWeight: '900', letterSpacing: 1.4, textTransform: 'uppercase' }, chooserTitle: { color: colors.yellow, fontSize: 27, fontWeight: '900', marginTop: 4 }, chooserIntro: { color: colors.mint, fontSize: 13, lineHeight: 19, marginTop: 5, maxWidth: 430 }, chooserSection: { color: colors.muted, fontSize: 10, fontWeight: '900', letterSpacing: 1.3, textTransform: 'uppercase', marginTop: 22, marginBottom: 8 }, choiceList: { gap: 9 }, gameChoice: { minHeight: 94, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 15, borderColor: '#2d3c40', borderWidth: 1, backgroundColor: colors.surface }, toolChoice: { minHeight: 86, backgroundColor: '#101516' }, choicePressed: { opacity: 0.78, transform: [{ scale: 0.985 }] }, choiceIcon: { width: 46, height: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#20383b' }, toolIcon: { backgroundColor: '#2a2d14' }, choiceCopy: { flex: 1 }, choiceTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 7 }, choiceTitle: { color: colors.white, fontSize: 16, fontWeight: '900' }, choiceBadge: { borderRadius: 9, paddingHorizontal: 7, paddingVertical: 3, backgroundColor: colors.yellow }, remoteChoiceBadge: { backgroundColor: colors.pink }, choiceBadgeText: { color: colors.background, fontSize: 8, fontWeight: '900' }, choiceDescription: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: 4 }, choiceArrow: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderColor: colors.cyan, borderWidth: 1 }, toolArrow: { backgroundColor: colors.yellow, borderColor: colors.yellow },
   animationIntro: { color: colors.muted, fontSize: 12, lineHeight: 17, marginTop: -3, marginBottom: 9 }, animationGrid: { gap: 8, paddingBottom: 10 }, animationChoice: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 14, borderWidth: 1, borderColor: '#2d3c40', backgroundColor: colors.surface }, animationChoiceSelected: { borderColor: colors.cyan, backgroundColor: '#172528' }, animationPreview: { width: 46, height: 46, alignItems: 'center', justifyContent: 'center', overflow: 'visible' }, animationCopy: { flex: 1 }, animationTitle: { color: colors.white, fontSize: 14, fontWeight: '900' }, animationTitleSelected: { color: colors.cyan }, animationDescription: { color: colors.muted, fontSize: 11, marginTop: 3 }, previewDieSlot: { width: 40, height: 40 }, previewDie: { borderRadius: 8, borderWidth: 1.5 },
   turnHeadingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 3 }, turnHeadingMeta: { flexShrink: 1, alignItems: 'flex-end', gap: 3 }, title: { flexShrink: 1, color: colors.yellow, fontSize: 21, fontWeight: '900' }, playerTwo: { color: colors.pink }, progress: { color: colors.muted, fontSize: 12, textAlign: 'right' }, computerBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#34202f', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 }, computerBadgeText: { color: colors.pink, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
   diceRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, paddingTop: 8, paddingBottom: 4 }, dieSlot: { width: 50, height: 50 }, heldDieSlot: { transform: [{ translateY: -4 }] }, die: { flex: 1, backgroundColor: colors.cyan, borderRadius: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.cyan, shadowColor: colors.cyan, shadowOpacity: 0.35, shadowRadius: 6 }, heldDie: { backgroundColor: colors.yellow, borderColor: colors.pink, shadowColor: colors.yellow, shadowOpacity: 0.85, shadowRadius: 10 }, diePressed: { opacity: 0.78, transform: [{ scale: 0.94 }] },

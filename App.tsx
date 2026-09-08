@@ -76,6 +76,12 @@ function LiveTurnBadge({ visible }: { visible: boolean }) {
   return <View style={styles.liveTurnBadge}><Text style={styles.liveTurnBadgeText}>{turns > 9 ? '9+' : turns}</Text></View>;
 }
 
+function SignedOutBadge() {
+  const { user } = useAuth();
+  if (user) return null;
+  return <View style={styles.accountBadge}><Text style={styles.accountBadgeText}>!</Text></View>;
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>('game');
   const [gameHeaderTitle, setGameHeaderTitle] = useState('Yahtzee!');
@@ -144,6 +150,7 @@ export default function App() {
             <Pressable key={item.key} onPress={() => { void Haptics.selectionAsync(); if (item.key === 'game' && canContinueGame && (tab !== 'game' || gameSettingsOpen)) setResumeGameRequest((value) => value + 1); setTab(item.key); }} style={[styles.tab, arcadeModeEnabled && styles.arcadeTab, active && styles.activeTabPill, arcadeModeEnabled && active && styles.arcadeActiveTabPill]}>
               <Ionicons name={active ? item.activeIcon : item.icon} size={23} color={active ? colors.cyan : colors.muted} />
               {item.key === 'game' && <LiveTurnBadge visible={tab !== 'game' || gameSettingsOpen} />}
+              {item.key === 'account' && <SignedOutBadge />}
               <Text style={[styles.tabLabel, active && styles.activeTab]}>{item.key === 'game' && canContinueGame && (tab !== 'game' || gameSettingsOpen) ? 'Resume' : item.label}</Text>
             </Pressable>
           ); })}
@@ -187,6 +194,8 @@ const styles = StyleSheet.create({
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, borderRadius: 27 },
   liveTurnBadge: { position: 'absolute', top: 4, right: 18, minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.pink, borderWidth: 2, borderColor: '#121a1d' },
   liveTurnBadgeText: { color: colors.white, fontSize: 9, lineHeight: 11, fontWeight: '900' },
+  accountBadge: { position: 'absolute', top: 4, right: 18, width: 18, height: 18, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.yellow, borderWidth: 2, borderColor: '#121a1d' },
+  accountBadgeText: { color: colors.background, fontSize: 10, lineHeight: 12, fontWeight: '900' },
   activeTabPill: { backgroundColor: '#20383b', borderColor: '#315a5e', borderWidth: 1 },
   arcadeTabBar: { borderRadius: 5, borderWidth: 2, borderColor: '#315a5e', backgroundColor: '#080f11', shadowOpacity: 0.5, shadowRadius: 0, shadowOffset: { width: 3, height: 3 }, elevation: 8 },
   arcadeTab: { borderRadius: 2 },
