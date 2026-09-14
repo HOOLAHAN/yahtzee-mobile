@@ -59,7 +59,7 @@ function LiveTurnBadge({ visible }: { visible: boolean }) {
   const refresh = useCallback(() => {
     if (!user) { setTurns(0); return; }
     void fetchMyLiveGames()
-      .then((games) => setTurns(games.filter((game) => game.status === 'ACTIVE' && game.currentUserId === user.userId).length))
+      .then((games) => setTurns(games.filter((game) => (game.status === 'INVITED' && game.guestUserId === user.userId) || (game.status === 'ACTIVE' && game.currentUserId === user.userId)).length))
       .catch(() => undefined);
   }, [user]);
 

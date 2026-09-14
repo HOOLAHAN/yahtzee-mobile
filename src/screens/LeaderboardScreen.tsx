@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, AppState, Easing, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, Animated, AppState, Easing, Modal, PanResponder, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { AppText as Text } from '../components/AppText';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { fetchLeaderboard, fetchUserScores, LeaderboardScore } from '../services/scores';
@@ -7,6 +7,7 @@ import { useAuth } from '../state/AuthContext';
 import { colors } from '../theme';
 import { fetchAllDailyResults, fetchDailyResults, fetchMyGameResults, fetchSoloResults, filterResultsByPeriod, GameResult, ResultMode, ResultPeriod } from '../services/gameResults';
 import { localDateKey } from '../lib/dailyChallenge';
+import { challengeLiveGame } from '../services/liveGames';
 
 type Period = ResultPeriod;
 type Competition = 'solo' | 'daily';
@@ -146,6 +147,16 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
     setLoading(true);
     setFilterMenu(null);
   };
+  const challengePlayer = async (player: LeaderboardEntry) => {
+    if (!user) { closeDetails(); onOpenAccount?.(); return; }
+    try {
+      await challengeLiveGame(player.userId);
+      Alert.alert('Challenge sent', `${player.username} can accept or decline it from Remote Game.`);
+      closeDetails();
+    } catch (caught) {
+      Alert.alert('Unable to send challenge', caught instanceof Error ? caught.message : 'Please try again.');
+    }
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.content} refreshControl={<RefreshControl refreshing={loading} onRefresh={() => { setLoading(true); void load(); }} tintColor={colors.cyan} />}>
@@ -167,7 +178,7 @@ export function LeaderboardScreen({ onOpenAccount, dailyLeaderboardRequest = 0 }
       {loading && scores.length === 0 && <ActivityIndicator color={colors.cyan} size="large" />}
       {error ? <View style={styles.message}><Text style={styles.error}>{error}</Text><Pressable onPress={() => { setLoading(true); void load(); }}><Text style={styles.retry}>Try again</Text></Pressable></View> : null}
       {scores.map((item, index) => (
-        <Pressable accessibilityRole="button" accessibilityHint="Shows score details" onPress={() => setSelected(item)} key={item.id} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
+        <Pressable accessibilityRole="button" accessibilityHint="Shows player and score options" onPress={() => item.userId === user?.userId ? setSelected(item) : Alert.alert(item.username, 'View this score or challenge this player to a Remote Game.', [{ text: 'Cancel', style: 'cancel' }, { text: 'View score', onPress: () => setSelected(item) }, { text: 'Challenge', onPress: () => void challengePlayer(item) }])} key={item.id} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
           <Text style={styles.rank}>{mine ? '•' : index + 1}</Text>
           <View style={styles.player}><Text numberOfLines={1} style={styles.name}>{item.username}</Text><Text style={styles.rowMeta}>{item.mode === 'DAILY' ? 'Daily Challenge' : item.mode === 'COMPUTER' ? 'Vs Computer' : item.mode === 'PASS' ? 'Pass & Play' : item.mode === 'REAL' ? 'Real Dice' : 'Solo'}{(item.completedAt ?? item.timestamp) ? ` · ${new Date(item.completedAt ?? item.timestamp).toLocaleDateString()}` : ''}</Text></View>
           <Text style={styles.score}>{item.score}</Text>

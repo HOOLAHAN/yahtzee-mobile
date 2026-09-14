@@ -3,14 +3,15 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import { Category, DieFace, ScoreEntry } from '../lib/game';
 import { graphqlWithDevLog } from '../lib/apiLogger';
 
-export type LiveGameStatus = 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'ABANDONED';
+export type LiveGameStatus = 'INVITED' | 'WAITING' | 'ACTIVE' | 'COMPLETED' | 'DECLINED' | 'ABANDONED';
 export type LiveGameAction =
   | { type: 'ROLL'; actionId?: string }
   | { type: 'TOGGLE_HOLD'; index: number; actionId?: string }
   | { type: 'SELECT_CATEGORY'; category: Category; actionId?: string }
   | { type: 'LOCK_CATEGORY'; category: Category; actionId?: string }
   | { type: 'LEAVE'; actionId?: string }
-  | { type: 'REMATCH'; actionId?: string };
+  | { type: 'REMATCH'; actionId?: string }
+  | { type: 'RESPOND_INVITE'; accept: boolean; actionId?: string };
 
 export interface LiveGame {
   id: string;
@@ -65,6 +66,10 @@ const parseGame = (game: LiveGame): LiveGame => ({
 
 export async function createLiveGame() {
   return parseGame(await request<LiveGame>(`mutation CreateLiveGame { createLiveGame { ${fields} } }`, 'createLiveGame'));
+}
+
+export async function challengeLiveGame(userId: string) {
+  return parseGame(await request<LiveGame>(`mutation ChallengeLiveGame($userId:ID!){challengeLiveGame(userId:$userId){${fields}}}`, 'challengeLiveGame', { userId }));
 }
 
 export async function joinLiveGame(code: string) {

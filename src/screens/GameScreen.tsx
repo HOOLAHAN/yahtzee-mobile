@@ -86,7 +86,7 @@ export function AnimationPreview({ animation, active, token }: { animation: Dice
   return <View style={styles.animationPreview}><AnimatedDie value={5} index={0} held={false} rollToken={active ? token : 0} canHold={false} reduceMotion={false} animation={animation} compact accentColor={colors.cyan} heldColor={colors.yellow} softColor={colors.background} onPress={() => undefined} /></View>;
 }
 
-function GameModeChooser({ onChange, remoteTurns, dailyOutstanding }: { onChange: (mode: GameMode) => void; remoteTurns: number; dailyOutstanding: boolean }) {
+function GameModeChooser({ onChange, remoteTurns, remoteInvites, dailyOutstanding }: { onChange: (mode: GameMode) => void; remoteTurns: number; remoteInvites: number; dailyOutstanding: boolean }) {
   const gameOptions: { mode: GameMode; label: string; description: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { mode: 'solo', label: 'Solo', description: 'Play a classic game at your own pace and submit your final score.', icon: 'person-outline' },
     { mode: 'daily', label: 'Daily Challenge', description: 'Play today’s fixed roll sequence. Everyone gets the same candidate dice each roll; your holds and scoring choices decide the result.', icon: 'sunny-outline' },
@@ -98,7 +98,7 @@ function GameModeChooser({ onChange, remoteTurns, dailyOutstanding }: { onChange
     { mode: 'virtual', label: 'Dice Roller', description: 'Roll one or two dice for any tabletop game.', icon: 'dice-outline' },
     { mode: 'real', label: 'Scorecard', description: 'Use physical dice while the app manages every player.', icon: 'calculator-outline' },
   ];
-  const choice = (option: typeof gameOptions[number], tool = false) => { const badge = option.mode === 'remote' && remoteTurns > 0 ? remoteTurns === 1 ? 'YOUR TURN' : `${remoteTurns} TURNS` : option.mode === 'daily' && dailyOutstanding ? 'TODAY' : ''; return <Pressable key={option.mode} accessibilityRole="button" onPress={() => onChange(option.mode)} style={({ pressed }) => [styles.gameChoice, tool && styles.toolChoice, pressed && styles.choicePressed]}><View style={[styles.choiceIcon, tool && styles.toolIcon]}><Ionicons name={option.icon} size={23} color={tool ? colors.yellow : colors.cyan} /></View><View style={styles.choiceCopy}><View style={styles.choiceTitleRow}><Text style={styles.choiceTitle}>{option.label}</Text>{Boolean(badge) && <View style={[styles.choiceBadge, option.mode === 'remote' && styles.remoteChoiceBadge]}><Text style={styles.choiceBadgeText}>{badge}</Text></View>}</View><Text style={styles.choiceDescription}>{option.description}</Text></View><View style={[styles.choiceArrow, tool && styles.toolArrow]}><Ionicons name="arrow-forward" size={18} color={tool ? colors.background : colors.cyan} /></View></Pressable>; };
+  const choice = (option: typeof gameOptions[number], tool = false) => { const badge = option.mode === 'remote' && remoteInvites > 0 ? remoteInvites === 1 ? 'INVITE' : `${remoteInvites} INVITES` : option.mode === 'remote' && remoteTurns > 0 ? remoteTurns === 1 ? 'YOUR TURN' : `${remoteTurns} TURNS` : option.mode === 'daily' && dailyOutstanding ? 'TODAY' : ''; return <Pressable key={option.mode} accessibilityRole="button" onPress={() => onChange(option.mode)} style={({ pressed }) => [styles.gameChoice, tool && styles.toolChoice, pressed && styles.choicePressed]}><View style={[styles.choiceIcon, tool && styles.toolIcon]}><Ionicons name={option.icon} size={23} color={tool ? colors.yellow : colors.cyan} /></View><View style={styles.choiceCopy}><View style={styles.choiceTitleRow}><Text style={styles.choiceTitle}>{option.label}</Text>{Boolean(badge) && <View style={[styles.choiceBadge, option.mode === 'remote' && styles.remoteChoiceBadge]}><Text style={styles.choiceBadgeText}>{badge}</Text></View>}</View><Text style={styles.choiceDescription}>{option.description}</Text></View><View style={[styles.choiceArrow, tool && styles.toolArrow]}><Ionicons name="arrow-forward" size={18} color={tool ? colors.background : colors.cyan} /></View></Pressable>; };
   return <ScrollView contentContainerStyle={styles.chooserContent} showsVerticalScrollIndicator={false}><Text style={styles.chooserEyebrow}>Game selection</Text><Text style={styles.chooserTitle}>Choose how to play</Text><Text style={styles.chooserIntro}>Start a Yahtzee game or open a tool for your physical dice.</Text><Text style={styles.chooserSection}>Play Yahtzee</Text><View style={styles.choiceList}>{gameOptions.map((option) => choice(option))}</View><Text style={styles.chooserSection}>Dice tools</Text><View style={styles.choiceList}>{tools.map((option) => choice(option, true))}</View></ScrollView>;
 }
 
@@ -264,6 +264,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   const [dailyStandingLoading, setDailyStandingLoading] = useState(false);
   const [showModeChooser, setShowModeChooser] = useState(true);
   const [remoteTurns, setRemoteTurns] = useState(0);
+  const [remoteInvites, setRemoteInvites] = useState(0);
   const [dailyOutstanding, setDailyOutstanding] = useState(false);
   const [hasActiveMode, setHasActiveMode] = useState(false);
   const [currentPlayer, setCurrentPlayer] = useState<Player>(1);
@@ -310,10 +311,11 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
           const [games, dailyResults] = await Promise.all([fetchMyLiveGames(), fetchDailyResults(today)]);
           if (cancelled) return;
           setRemoteTurns(games.filter((game) => game.status === 'ACTIVE' && game.currentUserId === user.userId).length);
+          setRemoteInvites(games.filter((game) => game.status === 'INVITED' && game.guestUserId === user.userId).length);
           completed ||= dailyResults.some((result) => result.userId === user.userId);
           if (completed) void AsyncStorage.setItem(`yahtzee.daily.completed.${today}.${user.userId}`, 'true');
         } catch { /* Keep local badge state when the network is unavailable. */ }
-      } else if (!cancelled) setRemoteTurns(0);
+      } else if (!cancelled) { setRemoteTurns(0); setRemoteInvites(0); }
       if (!cancelled) setDailyOutstanding(!completed);
     };
     void refreshAttention();
@@ -823,7 +825,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   </>;
   };
 
-  if (showModeChooser) return <GameModeChooser onChange={changeMode} remoteTurns={remoteTurns} dailyOutstanding={dailyOutstanding} />;
+  if (showModeChooser) return <GameModeChooser onChange={changeMode} remoteTurns={remoteTurns} remoteInvites={remoteInvites} dailyOutstanding={dailyOutstanding} />;
   if (remoteMode) return <LiveGameScreen requestedGameId={liveGameRequest?.gameId} requestedCode={liveGameRequest?.code} diceAnimation={diceAnimation} onClose={() => { setRemoteMode(false); setShowModeChooser(true); }} onOpenAccount={() => onOpenAccount?.()} />;
   if (scorekeeperMode) return <View style={styles.gameContainer}><RealDiceScreen onOpenSettings={() => setShowModeChooser(true)} /></View>;
   if (virtualDiceMode) return <View style={styles.gameContainer}><VirtualDiceScreen diceAnimation={diceAnimation} onOpenSettings={() => setShowModeChooser(true)} /></View>;
