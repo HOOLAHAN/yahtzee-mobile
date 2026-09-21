@@ -12,6 +12,7 @@ const variantConfig: Record<AppVariant, { name: string; bundleSuffix: string; sc
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   const current = variantConfig[variant];
+  const invitePath = variant === 'development' ? '/play-dev' : variant === 'preview' ? '/play-preview' : '/play';
 
   return {
     ...config,
@@ -21,11 +22,19 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ios: {
       ...config.ios,
       bundleIdentifier: `com.iainhoolahan.yahtzee${current.bundleSuffix}`,
+      associatedDomains: ['applinks:yahtzee.ijrhservices.co.uk'],
     },
     android: {
       ...config.android,
       package: `com.iainhoolahan.yahtzee${current.bundleSuffix}`,
+      intentFilters: [{
+        action: 'VIEW',
+        autoVerify: true,
+        data: [{ scheme: 'https', host: 'yahtzee.ijrhservices.co.uk', pathPrefix: invitePath }],
+        category: ['BROWSABLE', 'DEFAULT'],
+      }],
     },
+    extra: { ...config.extra, appVariant: variant },
     plugins: [
       ...(config.plugins ?? []),
       ['expo-dev-client', { addGeneratedScheme: variant === 'development' }],
