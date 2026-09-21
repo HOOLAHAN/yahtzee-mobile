@@ -38,6 +38,7 @@ import { defaultDiceAnimation, DiceAnimation } from '../lib/diceAnimation';
 import { LiveGameScreen } from './LiveGameScreen';
 import { fetchMyLiveGames } from '../services/liveGames';
 import { AnimatedGameDie } from '../components/AnimatedGameDie';
+import { LifecycleAction, LifecycleMode, recordGameLifecycleEvent } from '../services/gameLifecycle';
 
 const initialDice: DieFace[] = [1, 1, 1, 1, 1];
 const storageKey = 'yahtzee.active-game.v1';
@@ -265,6 +266,12 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   useEffect(() => { onPlayNavigationChange?.(hasActiveMode && !complete, showModeChooser); }, [complete, hasActiveMode, onPlayNavigationChange, showModeChooser]);
   const currentScore = hasRolled ? Math.max(...categories.filter((category) => isCategoryEligibleForRoll(category, dice, scores)).map((category) => scoreCategoryForTurn(category, dice, scores) + repeatYahtzeeBonus(scores, dice)), 0) : 0;
   const currentRound = Math.min(scores.length + 1, categories.length);
+  const lifecycleMode: LifecycleMode = dailyMode ? 'DAILY' : computerOpponent ? 'COMPUTER' : twoPlayer ? 'PASS' : 'SOLO';
+  const lifecycleCategoriesFilled = histories[1].length + histories[2].length;
+  const recordLifecycle = (action: LifecycleAction) => {
+    if (!user || remoteMode || scorekeeperMode || virtualDiceMode) return;
+    void recordGameLifecycleEvent({ gameId, mode: lifecycleMode, action, round: currentRound, score: totals[1] + totals[2], categoriesFilled: lifecycleCategoriesFilled }).catch(() => undefined);
+  };
   const isComputerTurn = computerOpponent && currentPlayer === 2;
   const secondPlayerProfile = computerOpponent ? computerProfile : playerProfiles[1];
   const currentProfile = dailyMode ? dailyProfile : currentPlayer === 1 ? playerProfiles[0] : secondPlayerProfile;
@@ -275,6 +282,13 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       .reduce<Category | null>((best, category) => !best || scoreCategoryForTurn(category, dice, scores) > scoreCategoryForTurn(best, dice, scores) || (scoreCategoryForTurn(category, dice, scores) === scoreCategoryForTurn(best, dice, scores) && categoryRecommendationValue(category, dice) > categoryRecommendationValue(best, dice)) ? category : best, null);
   }, [dice, hasRolled, scoreSuggestionsEnabled, scores]);
   const joker = jokerTurn(scores, dice);
+
+  useEffect(() => {
+    if (!hasRolled || lifecycleCategoriesFilled > 0 || remoteMode || scorekeeperMode || virtualDiceMode) return;
+    recordLifecycle('STARTED');
+    // The backend key makes this idempotent while the first round is in progress.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasRolled, lifecycleCategoriesFilled, remoteMode, scorekeeperMode, virtualDiceMode]);
 
   useEffect(() => {
     if (!dailyMode) { setDailyAlreadyCompleted(false); return; }
@@ -405,6 +419,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
       yahtzeeOnFinalRoll,
     }).then(async (savedResult) => {
       setProgressRecorded(true);
+      recordLifecycle('COMPLETED');
       showToast(dailyMode ? 'Daily result saved' : 'Achievement progress saved');
       if (dailyMode) {
         const board = await fetchDailyResults(dailyDate);
@@ -579,11 +594,12 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
   }, [complete, dailyMode, dailyPlayerKey, twoPlayer]);
 
   const reset = () => Alert.alert('Reset game?', 'All scores from this game will be lost.', [
-    { text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: clearGame },
+    { text: 'Cancel', style: 'cancel' }, { text: 'Reset', style: 'destructive', onPress: () => { if (hasRolled || lifecycleCategoriesFilled) recordLifecycle('RESET'); clearGame(); } },
   ]);
 
   const dailyResetInfo = () => Alert.alert('Daily Challenge protected', 'Today’s challenge can only be attempted once. Choose another game if you want a break; your exact progress will be waiting when you return.');
   const applyMode = async (mode: GameMode) => {
+    if (!dailyMode && (hasRolled || lifecycleCategoriesFilled) && !complete) recordLifecycle('MODE_SWITCH');
     if (dailyMode && !complete) {
       const current: PersistedGame = { ownerKey: gameOwnerKey, twoPlayer, computerOpponent, scorekeeperMode, virtualDiceMode, dailyMode, dailyDate, dailyThrowIndex, progressRecorded, yahtzeeOnFinalRoll, currentPlayer, dice, held: [...held], rollsLeft, hasRolled, histories, submitted, queued, gameId };
       await AsyncStorage.setItem(dailyAttemptKey(dailyDate, user?.userId), JSON.stringify(current));
