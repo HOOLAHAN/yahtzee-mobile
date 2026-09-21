@@ -1,48 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, AppState, Easing, Modal, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
+import { AccessibilityInfo, ActivityIndicator, Alert, AppState, Modal, Pressable, ScrollView, Share, StyleSheet, TextInput, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import NetInfo from '@react-native-community/netinfo';
 import Constants from 'expo-constants';
 import { AppText as Text } from '../components/AppText';
-import { categories, Category, isCategoryEligibleForRoll, repeatYahtzeeBonus, scoreCategoryForTurn, totalScore } from '../lib/game';
+import { categories, Category, DieFace, isCategoryEligibleForRoll, repeatYahtzeeBonus, scoreCategoryForTurn, totalScore } from '../lib/game';
 import { resultMetrics } from '../lib/engagement';
 import { createGameResult } from '../services/gameResults';
 import { createLiveGame, fetchLiveGame, fetchMyLiveGames, joinLiveGame, LiveGame, LiveGameAction, subscribeToLiveGame, updateLiveGame } from '../services/liveGames';
 import { useAuth } from '../state/AuthContext';
-import { colors } from '../theme';
+import { colors, playerProfiles } from '../theme';
 import { DiceAnimation } from '../lib/diceAnimation';
 import QRCode from 'react-native-qrcode-svg';
+import { AnimatedGameDie } from '../components/AnimatedGameDie';
 
 const activeGameKey = 'yahtzee.live-game.active.v1';
 const recordedPrefix = 'yahtzee.live-game.recorded.';
 const labels: Record<Category, string> = { Ones: 'Ones', Twos: 'Twos', Threes: 'Threes', Fours: 'Fours', Fives: 'Fives', Sixes: 'Sixes', 'Three of a Kind': '3 of a Kind', 'Four of a Kind': '4 of a Kind', 'Full House': 'Full House', 'Small Straight': 'Sm. Straight', 'Large Straight': 'Lg. Straight', Yahtzee: 'Yahtzee', Chance: 'Chance' };
-const pips: Record<number, number[]> = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
 const appVariant = Constants.expoConfig?.extra?.appVariant;
 const invitePath = appVariant === 'development' ? 'play-dev' : appVariant === 'preview' ? 'play-preview' : 'play';
 const inviteUrl = (code: string) => `https://yahtzee.ijrhservices.co.uk/${invitePath}?join=${code}`;
-
-function Die({ value, held, disabled, rollToken, animation, opponentTurn, onPress }: { value: number; held: boolean; disabled: boolean; rollToken: number; animation: DiceAnimation; opponentTurn: boolean; onPress: () => void }) {
-  const motion = useRef(new Animated.Value(0)).current;
-  const lastRollToken = useRef(rollToken);
-  useEffect(() => {
-    if (lastRollToken.current === rollToken) return;
-    lastRollToken.current = rollToken;
-    if (held) { motion.stopAnimation(); motion.setValue(0); return; }
-    motion.setValue(0);
-    const duration = animation === 'quickFlip' ? 280 : animation === 'bounceSpin' ? 760 : 460;
-    Animated.timing(motion, { toValue: 1, duration, easing: animation === 'bounceSpin' ? Easing.out(Easing.back(1.6)) : Easing.out(Easing.cubic), useNativeDriver: true }).start();
-  }, [animation, held, motion, rollToken]);
-  const transform = animation === 'shake'
-    ? [{ translateX: motion.interpolate({ inputRange: [0, .2, .4, .6, .8, 1], outputRange: [0, -8, 8, -6, 5, 0] }) }]
-    : animation === 'quickFlip'
-      ? [{ rotateY: motion.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }, { scale: motion.interpolate({ inputRange: [0, .5, 1], outputRange: [1, .84, 1] }) }]
-      : animation === 'bounceSpin'
-        ? [{ translateY: motion.interpolate({ inputRange: [0, .45, 1], outputRange: [0, -24, 0] }) }, { rotate: motion.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '540deg'] }) }]
-        : [{ rotate: motion.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '300deg'] }) }, { scale: motion.interpolate({ inputRange: [0, .55, 1], outputRange: [1, .9, 1] }) }];
-  return <Animated.View style={{ transform }}><Pressable disabled={disabled} onPress={onPress} style={[styles.die, opponentTurn && styles.opponentDie, held && styles.heldDie]}>{Array.from({ length: 9 }, (_, index) => <View key={index} style={styles.pipCell}>{pips[value]?.includes(index) && <View style={styles.pip} />}</View>)}</Pressable></Animated.View>;
-}
 
 export function LiveGameScreen({ requestedGameId, requestedCode, diceAnimation, onClose, onOpenAccount }: { requestedGameId?: string | null; requestedCode?: string | null; diceAnimation: DiceAnimation; onClose: () => void; onOpenAccount: () => void }) {
   const { user } = useAuth();
@@ -58,6 +37,7 @@ export function LiveGameScreen({ requestedGameId, requestedCode, diceAnimation, 
   const [connection, setConnection] = useState<'live' | 'reconnecting' | 'offline'>('reconnecting');
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
   const [showInviteQr, setShowInviteQr] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
   const holdQueue = useRef<Promise<void>>(Promise.resolve());
   const pendingHolds = useRef(0);
   const suppressNextRollAnimation = useRef(false);
@@ -77,6 +57,7 @@ export function LiveGameScreen({ requestedGameId, requestedCode, diceAnimation, 
   }, [requestedGameId, user]);
 
   useEffect(() => { void loadLobby(); }, [loadLobby]);
+  useEffect(() => { void AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion); const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion); return () => subscription.remove(); }, []);
   useEffect(() => { if (requestedCode) setCode(requestedCode.replace(/\D/g, '').slice(0, 6)); }, [requestedCode]);
   useEffect(() => {
     if (!game || !['INVITED', 'WAITING', 'ACTIVE'].includes(game.status)) return;
@@ -182,7 +163,7 @@ export function LiveGameScreen({ requestedGameId, requestedCode, diceAnimation, 
   }
 
   return <View style={styles.game}><View style={[styles.connectionBar, connection !== 'live' && styles.connectionWarning]}><View style={[styles.connectionDot, connection === 'live' ? styles.connectionDotLive : connection === 'offline' ? styles.connectionDotOffline : styles.connectionDotWaiting]} /><Text style={styles.connectionText}>{connection === 'live' ? 'Live' : connection === 'offline' ? 'Offline · your game is safe' : 'Reconnecting…'}{lastSyncedAt && connection !== 'live' ? ` · synced ${lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</Text></View><View style={[styles.matchupHeader, !myTurn && styles.opponentScoreStrip]}><View style={styles.matchupScores}><Text style={styles.compactPlayer}>You <Text style={styles.scoreValue}>{myTotal}</Text></Text><Text style={styles.versus}>VS</Text><Text numberOfLines={1} style={[styles.compactPlayer, !myTurn && styles.opponentText]}>{opponent} <Text style={[styles.scoreValue, !myTurn && styles.opponentScore]}>{theirTotal}</Text></Text></View><View style={styles.matchupMeta}><Text style={[styles.matchupTurn, !myTurn && styles.opponentText]}>{myTurn ? 'Your turn' : `${opponent}’s turn`}</Text><Text style={styles.roundText}>Round {game.round} of 13</Text></View></View>
-    <View style={styles.diceRow}>{game.dice.map((die, index) => <Die key={index} value={die} held={game.held.includes(index)} disabled={!myTurn || !game.hasRolled || busy} rollToken={rollToken} animation={diceAnimation} opponentTurn={!myTurn} onPress={() => toggleHold(index)} />)}</View>
+    <View style={styles.diceRow}>{game.dice.map((die, index) => <AnimatedGameDie key={index} value={die as DieFace} index={index} held={game.held.includes(index)} canHold={myTurn && game.hasRolled && !busy} reduceMotion={reduceMotion} resetPosition={!game.hasRolled} rollToken={rollToken} animation={diceAnimation} accentColor={myTurn ? colors.cyan : playerProfiles[1].accent} heldColor={colors.yellow} softColor={colors.background} onPress={() => toggleHold(index)} />)}</View>
     <View style={styles.rollMeta}><Text style={[styles.rollGuidance, !myTurn && styles.opponentText]}>{myTurn ? (game.hasRolled ? 'TAP DICE TO HOLD' : 'ROLL TO BEGIN') : `WATCHING ${(opponent ?? 'OPPONENT').toUpperCase()}`}</Text><View style={styles.rollMetaRight}><View style={styles.rollDots}>{[0,1,2].map((index) => <View key={index} style={[styles.rollDot, index < game.rollsLeft && (myTurn ? styles.rollDotActive : styles.opponentRollDot)]} />)}</View></View></View>
     {myTurn && <Pressable disabled={busy || game.rollsLeft === 0} onPress={() => void action({ type: 'ROLL' })} style={[styles.rollButton, game.rollsLeft === 0 && styles.disabled]}><Ionicons name="dice" size={21} color={colors.background} /><Text style={styles.rollText}>{game.hasRolled ? 'Roll Again' : 'Roll Dice'}</Text></Pressable>}
     {myTurn && <View style={styles.turnStats}><Text style={styles.turnStatLabel}>Best now <Text style={styles.turnStatValue}>{bestNow}</Text></Text><Text style={styles.turnStatLabel}>Total <Text style={styles.turnStatValue}>{myTotal}</Text></Text></View>}

@@ -37,13 +37,11 @@ import { createGameResult, DailyRoundStanding, fetchDailyResults, GameResult, su
 import { defaultDiceAnimation, DiceAnimation } from '../lib/diceAnimation';
 import { LiveGameScreen } from './LiveGameScreen';
 import { fetchMyLiveGames } from '../services/liveGames';
+import { AnimatedGameDie } from '../components/AnimatedGameDie';
 
 const initialDice: DieFace[] = [1, 1, 1, 1, 1];
 const storageKey = 'yahtzee.active-game.v1';
 const dailyAttemptKey = (date: string, userId?: string) => `yahtzee.daily.attempt.${date}.${userId ?? 'guest'}.v1`;
-const pipCells: Record<DieFace, number[]> = {
-  1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8],
-};
 const categoryLabels: Record<Category, string> = {
   Ones: 'Ones', Twos: 'Twos', Threes: 'Threes', Fours: 'Fours', Fives: 'Fives', Sixes: 'Sixes',
   'Three of a Kind': '3 of a Kind', 'Four of a Kind': '4 of a Kind', 'Full House': 'Full House',
@@ -75,15 +73,8 @@ interface PersistedGame {
   gameId: string;
 }
 
-function PipFace({ value, small = false, preview = false }: { value: DieFace; small?: boolean; preview?: boolean }) {
-  const gridStyle = small ? styles.smallPipGrid : preview ? styles.previewPipGrid : styles.pipGrid;
-  const cellStyle = small ? styles.smallPipCell : preview ? styles.previewPipCell : styles.pipCell;
-  const pipStyle = small ? styles.smallPip : preview ? styles.previewPip : styles.pip;
-  return <View style={gridStyle}>{Array.from({ length: 9 }, (_, cell) => <View key={cell} style={cellStyle}>{pipCells[value].includes(cell) && <View style={pipStyle} />}</View>)}</View>;
-}
-
 export function AnimationPreview({ animation, active, token }: { animation: DiceAnimation; active: boolean; token: number }) {
-  return <View style={styles.animationPreview}><AnimatedDie value={5} index={0} held={false} rollToken={active ? token : 0} canHold={false} reduceMotion={false} animation={animation} compact accentColor={colors.cyan} heldColor={colors.yellow} softColor={colors.background} onPress={() => undefined} /></View>;
+  return <View style={styles.animationPreview}><AnimatedGameDie value={5} index={0} held={false} rollToken={active ? token : 0} canHold={false} reduceMotion={false} animation={animation} compact accentColor={colors.cyan} heldColor={colors.yellow} softColor={colors.background} onPress={() => undefined} /></View>;
 }
 
 function GameModeChooser({ onChange, remoteTurns, remoteInvites, dailyOutstanding }: { onChange: (mode: GameMode) => void; remoteTurns: number; remoteInvites: number; dailyOutstanding: boolean }) {
@@ -100,71 +91,6 @@ function GameModeChooser({ onChange, remoteTurns, remoteInvites, dailyOutstandin
   ];
   const choice = (option: typeof gameOptions[number], tool = false) => { const badge = option.mode === 'remote' && remoteInvites > 0 ? remoteInvites === 1 ? 'INVITE' : `${remoteInvites} INVITES` : option.mode === 'remote' && remoteTurns > 0 ? remoteTurns === 1 ? 'YOUR TURN' : `${remoteTurns} TURNS` : option.mode === 'daily' && dailyOutstanding ? 'TODAY' : ''; return <Pressable key={option.mode} accessibilityRole="button" onPress={() => onChange(option.mode)} style={({ pressed }) => [styles.gameChoice, tool && styles.toolChoice, pressed && styles.choicePressed]}><View style={[styles.choiceIcon, tool && styles.toolIcon]}><Ionicons name={option.icon} size={23} color={tool ? colors.yellow : colors.cyan} /></View><View style={styles.choiceCopy}><View style={styles.choiceTitleRow}><Text style={styles.choiceTitle}>{option.label}</Text>{Boolean(badge) && <View style={[styles.choiceBadge, option.mode === 'remote' && styles.remoteChoiceBadge]}><Text style={styles.choiceBadgeText}>{badge}</Text></View>}</View><Text style={styles.choiceDescription}>{option.description}</Text></View><View style={[styles.choiceArrow, tool && styles.toolArrow]}><Ionicons name="arrow-forward" size={18} color={tool ? colors.background : colors.cyan} /></View></Pressable>; };
   return <ScrollView contentContainerStyle={styles.chooserContent} showsVerticalScrollIndicator={false}><Text style={styles.chooserEyebrow}>Game selection</Text><Text style={styles.chooserTitle}>Choose how to play</Text><Text style={styles.chooserIntro}>Start a Yahtzee game or open a tool for your physical dice.</Text><Text style={styles.chooserSection}>Play Yahtzee</Text><View style={styles.choiceList}>{gameOptions.map((option) => choice(option))}</View><Text style={styles.chooserSection}>Dice tools</Text><View style={styles.choiceList}>{tools.map((option) => choice(option, true))}</View></ScrollView>;
-}
-
-function AnimatedDie({ value, index, held, rollToken, canHold, reduceMotion, resetPosition = false, animation = defaultDiceAnimation, compact = false, accentColor, heldColor, softColor, onPress }: {
-  value: DieFace; index: number; held: boolean; rollToken: number; canHold: boolean; reduceMotion: boolean; resetPosition?: boolean; animation?: DiceAnimation; compact?: boolean; accentColor: string; heldColor: string; softColor: string; onPress: () => void;
-}) {
-  const arcadeMode = useArcadeMode();
-  const spin = useRef(new Animated.Value(0)).current;
-  const lift = useRef(new Animated.Value(0)).current;
-  const scale = useRef(new Animated.Value(1)).current;
-  const sway = useRef(new Animated.Value(0)).current;
-  const lastRollToken = useRef(0);
-
-  useEffect(() => {
-    if (!resetPosition) return;
-    spin.stopAnimation(); lift.stopAnimation(); scale.stopAnimation(); sway.stopAnimation();
-    spin.setValue(0); lift.setValue(0); scale.setValue(1); sway.setValue(0);
-  }, [lift, resetPosition, scale, spin, sway]);
-
-  useEffect(() => {
-    if (!held) return;
-    spin.stopAnimation(); lift.stopAnimation(); scale.stopAnimation(); sway.stopAnimation();
-    spin.setValue(0); lift.setValue(0); scale.setValue(1); sway.setValue(0);
-  }, [held, lift, scale, spin, sway]);
-
-  useEffect(() => {
-    if (rollToken === 0 || lastRollToken.current === rollToken) return;
-    lastRollToken.current = rollToken;
-    if (held || reduceMotion) return;
-    spin.setValue(0); lift.setValue(0); scale.setValue(animation === 'classic' ? 0.78 : 1); sway.setValue(0);
-    const classic = Animated.parallel([
-      Animated.timing(spin, { toValue: 1, duration: 620 + index * 45, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
-      Animated.sequence([
-        Animated.timing(lift, { toValue: -22 - (index % 2) * 8, duration: 210, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.spring(lift, { toValue: 0, speed: 16, bounciness: 11, useNativeDriver: true }),
-      ]),
-      Animated.sequence([
-        Animated.timing(scale, { toValue: 1.16, duration: 230, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-        Animated.spring(scale, { toValue: 1, speed: 18, bounciness: 12, useNativeDriver: true }),
-      ]),
-    ]);
-    const bounceSpin = Animated.parallel([Animated.timing(spin, { toValue: 1, duration: 820 + index * 35, easing: Easing.out(Easing.cubic), useNativeDriver: true }), Animated.sequence([Animated.timing(lift, { toValue: -42 - index * 3, duration: 250, easing: Easing.out(Easing.quad), useNativeDriver: true }), Animated.spring(lift, { toValue: 0, speed: 13, bounciness: 18, useNativeDriver: true })]), Animated.sequence([Animated.timing(scale, { toValue: 1.12, duration: 250, useNativeDriver: true }), Animated.spring(scale, { toValue: 1, speed: 14, bounciness: 16, useNativeDriver: true })])]);
-    const shake = Animated.sequence([-1, 1, -.85, .85, -.55, .55, 0].map((position) => Animated.timing(sway, { toValue: position, duration: 55, easing: Easing.linear, useNativeDriver: true })));
-    const quickFlip = Animated.parallel([Animated.timing(spin, { toValue: 1, duration: 320 + index * 20, easing: Easing.out(Easing.back(1.4)), useNativeDriver: true }), Animated.sequence([Animated.timing(scale, { toValue: .82, duration: 110, useNativeDriver: true }), Animated.spring(scale, { toValue: 1, speed: 24, bounciness: 8, useNativeDriver: true })])]);
-    (animation === 'bounceSpin' ? bounceSpin : animation === 'shake' ? shake : animation === 'quickFlip' ? quickFlip : classic).start(({ finished }) => {
-      if (!finished) return;
-      spin.setValue(0); lift.setValue(0); scale.setValue(1); sway.setValue(0);
-    });
-  }, [animation, held, index, lift, reduceMotion, rollToken, scale, spin, sway]);
-
-  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', index % 2 === 0 ? '720deg' : '-720deg'] });
-  const translateX = sway.interpolate({ inputRange: [-1, 1], outputRange: [-11, 11] });
-  return <Animated.View style={[styles.dieSlot, compact && styles.previewDieSlot, { transform: [{ translateX: resetPosition ? 0 : translateX }, { translateY: resetPosition ? 0 : lift }, { rotate: resetPosition ? '0deg' : rotate }, { scale: resetPosition ? 1 : scale }] }, held && styles.heldDieSlot]}>
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Die ${index + 1}, ${value}${held ? ', held' : ''}`}
-      accessibilityHint={canHold ? `Double tap to ${held ? 'release' : 'hold'} this die` : 'Roll before holding dice'}
-      accessibilityState={{ disabled: !canHold, selected: held }}
-      disabled={!canHold}
-      onPress={onPress}
-      style={({ pressed }) => [styles.die, compact && styles.previewDie, { backgroundColor: accentColor, borderColor: accentColor, shadowColor: accentColor }, arcadeMode && styles.arcadeDie, held && styles.heldDie, held && { backgroundColor: heldColor, borderColor: accentColor, shadowColor: heldColor }, pressed && styles.diePressed]}
-    >
-      <PipFace value={value} preview={compact} />
-      {held && <View style={[styles.holdBadge, { backgroundColor: accentColor, borderColor: heldColor }]}><Text style={[styles.holdBadgeText, { color: softColor }]}>HELD</Text></View>}
-    </Pressable>
-  </Animated.View>;
 }
 
 const pause = (milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
@@ -835,7 +761,7 @@ export function GameScreen({ chooserRequest = 0, resumeRequest = 0, dailyLaunchR
 
     <View style={[styles.turnControls, dailyMode && styles.dailyTurnControls]}>
       <View style={styles.turnHeadingRow}><Text style={[styles.title, { color: currentProfile.score }]}>{isComputerTurn ? "Computer's turn" : computerOpponent || dailyMode || !twoPlayer ? 'Your turn' : `Player ${currentPlayer}'s turn`}</Text><View style={styles.turnHeadingMeta}><Text style={styles.progress}>{dailyMode ? `${dailyDate} · ` : ''}Round {currentRound} of {categories.length}</Text>{isComputerTurn && <View style={[styles.computerBadge, { backgroundColor: computerProfile.soft }]}><Ionicons name="hardware-chip-outline" size={13} color={computerProfile.accent} /><Text style={[styles.computerBadgeText, { color: computerProfile.accent }]}>Thinking</Text></View>}</View></View>
-      <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} resetPosition={!hasRolled} animation={diceAnimation} accentColor={currentProfile.accent} heldColor={dailyMode ? colors.pink : colors.yellow} softColor={colors.background} onPress={() => toggleHeld(index)} />)}</View>
+      <View style={styles.diceRow}>{dice.map((die, index) => <AnimatedGameDie key={index} value={die} index={index} held={held.has(index)} rollToken={rollToken} canHold={hasRolled && !complete && !isComputerTurn} reduceMotion={reduceMotion} resetPosition={!hasRolled} animation={diceAnimation} accentColor={currentProfile.accent} heldColor={dailyMode ? colors.pink : colors.yellow} softColor={colors.background} onPress={() => toggleHeld(index)} />)}</View>
       <View style={styles.rollMeta}><Text style={[styles.help, { color: currentProfile.accent }]}>{isComputerTurn ? hasRolled ? 'Computer is choosing dice' : 'Computer is preparing' : hasRolled ? 'Tap dice to hold' : 'Roll to begin'}</Text><View accessibilityLabel={`${rollsLeft} rolls remaining`} style={styles.rollDots}>{[0, 1, 2].map((dot) => <View key={dot} style={[styles.rollDot, dot < rollsLeft && { backgroundColor: currentProfile.accent, borderColor: currentProfile.accent }]} />)}</View></View>
       {hasRolled && !holdTipSeen && !isComputerTurn && <View style={styles.coachmark}><Ionicons name="hand-left-outline" size={18} color={colors.yellow} /><Text style={styles.coachmarkText}>Tap any dice you want to hold, then roll again. Held dice turn yellow.</Text><Pressable onPress={() => { setHoldTipSeen(true); void AsyncStorage.setItem('yahtzee.tip.hold-dice.v1', 'true'); }}><Text style={styles.coachmarkAction}>Got it</Text></Pressable></View>}
       <Pressable accessibilityRole="button" accessibilityLabel={`Roll dice, ${rollsLeft} rolls remaining`} disabled={rollsLeft === 0 || complete || isComputerTurn} onPress={roll} style={({ pressed }) => [styles.primaryButton, { backgroundColor: currentProfile.accent, shadowColor: currentProfile.accent }, arcadeMode && styles.arcadePrimaryButton, arcadeMode && { borderColor: currentProfile.score }, (rollsLeft === 0 || complete || isComputerTurn) && styles.disabled, pressed && styles.pressed]}><View style={styles.buttonContent}>{arcadeMode && <Text style={[styles.arcadePrompt, { color: currentProfile.score }]}>&gt;</Text>}<Ionicons name={isComputerTurn ? 'hardware-chip-outline' : 'dice'} size={22} color={colors.background} /><Text style={[styles.primaryText, arcadeMode && styles.arcadePrimaryText]}>{isComputerTurn ? 'Computer Playing' : hasRolled ? 'Roll Again' : 'Roll Dice'}</Text>{arcadeMode && <Text style={[styles.arcadeCursor, { color: colors.background }]}>_</Text>}</View></Pressable>
