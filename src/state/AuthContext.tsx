@@ -2,6 +2,7 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import { confirmResetPassword, confirmSignUp, deleteUser, fetchAuthSession, fetchUserAttributes, getCurrentUser, resendSignUpCode, resetPassword, signIn, signOut, signUp, updatePassword } from 'aws-amplify/auth';
 import { deleteMyProfile, updateMyProfile } from '../services/profiles';
 import { disableAppPushNotifications } from '../services/pushNotifications';
+import { applyPendingLifecycleConsent, deleteLifecycleEmailData, recordMobileActivity, rememberPendingLifecycleConsent } from '../services/lifecycleEmails';
 
 interface UserDetails {
   userId: string;
@@ -16,7 +17,7 @@ interface AuthValue {
   user: UserDetails | null;
   loading: boolean;
   login(email: string, password: string): Promise<string>;
-  register(email: string, password: string, username: string, firstName: string, lastName: string): Promise<string>;
+  register(email: string, password: string, username: string, firstName: string, lastName: string, lifecycleEmailOptIn?: boolean): Promise<string>;
   refreshUser(): Promise<void>;
   confirmRegistration(email: string, code: string): Promise<void>;
   resendRegistrationCode(email: string): Promise<void>;
@@ -53,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { if (user) void recordMobileActivity().catch(() => undefined); }, [user?.userId]);
 
   const value = useMemo<AuthValue>(() => ({
     user,
@@ -73,14 +75,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await fetchAuthSession({ forceRefresh: true });
       }
       await refresh();
+      await applyPendingLifecycleConsent(email).catch(() => undefined);
       return 'DONE';
     },
-    register: async (email, password, username, firstName, lastName) => {
+    register: async (email, password, username, firstName, lastName, lifecycleEmailOptIn = false) => {
       const result = await signUp({
         username: email.trim(),
         password,
         options: { userAttributes: { email: email.trim(), preferred_username: username.trim(), given_name: firstName.trim(), family_name: lastName.trim() } },
       });
+      await rememberPendingLifecycleConsent(email, lifecycleEmailOptIn);
       return result.nextStep.signUpStep;
     },
     confirmRegistration: async (email, code) => {
@@ -99,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await updatePassword({ oldPassword, newPassword });
     },
     deleteAccount: async () => {
+      await deleteLifecycleEmailData().catch(() => undefined);
       await deleteMyProfile().catch(() => undefined);
       await deleteUser();
       setUser(null);
