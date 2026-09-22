@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { AppText as Text } from '../components/AppText';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAuth } from '../state/AuthContext';
@@ -11,6 +11,7 @@ import { defaultDiceAnimation, DiceAnimation, diceAnimationOptions } from '../li
 import { AnimationPreview } from './GameScreen';
 import { AppToggle } from '../components/AppToggle';
 import { getLifecycleEmailPreference, updateLifecycleEmailPreference } from '../services/lifecycleEmails';
+import * as Notifications from 'expo-notifications';
 
 type Mode = 'login' | 'register' | 'confirm' | 'requestReset' | 'confirmReset';
 
@@ -72,14 +73,22 @@ export function AccountScreen({ registrationRequest = 0, onOpenAdmin, scoreSugge
   const [lifecycleEmailsBusy, setLifecycleEmailsBusy] = useState(false);
   const [lifecycleEmailsHydrated, setLifecycleEmailsHydrated] = useState(false);
   const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(false);
+  const [notificationsExpanded, setNotificationsExpanded] = useState(false);
+  const [pushDetailsExpanded, setPushDetailsExpanded] = useState(false);
+  const [reminderDetailsExpanded, setReminderDetailsExpanded] = useState(false);
   const [notifyTurns, setNotifyTurns] = useState(true);
   const [notifyInvites, setNotifyInvites] = useState(true);
   const [notifyGameUpdates, setNotifyGameUpdates] = useState(true);
+  const [notificationCategoryBusy, setNotificationCategoryBusy] = useState(false);
   const [pushNotificationsBusy, setPushNotificationsBusy] = useState(false);
   const [profilePreferencesHydrated, setProfilePreferencesHydrated] = useState(false);
+  const [profilePreferencesError, setProfilePreferencesError] = useState(false);
+  const [lifecycleEmailsError, setLifecycleEmailsError] = useState(false);
+  const [settingsRetry, setSettingsRetry] = useState(0);
   const [pushNotificationsError, setPushNotificationsError] = useState('');
   const [animationPreviewToken, setAnimationPreviewToken] = useState(0);
   const emailPromptedForUser = useRef<string | null>(null);
+  const preferencesQueue = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => { if (auth.user) { setUsername(auth.user.username); setFirstName(auth.user.firstName ?? ''); setLastName(auth.user.lastName ?? ''); } }, [auth.user]);
   useEffect(() => { if (registrationRequest > 0 && !auth.user) { setError(''); setMode('register'); } }, [auth.user, registrationRequest]);
@@ -91,18 +100,22 @@ export function AccountScreen({ registrationRequest = 0, onOpenAdmin, scoreSugge
     }
     let active = true;
     setProfilePreferencesHydrated(false);
-    void getMyProfile().then((profile) => {
+    setProfilePreferencesError(false);
+    void getMyProfile().then(async (profile) => {
+      const permission = await Notifications.getPermissionsAsync().catch(() => null);
       if (!active) return;
       onScoreSuggestionsChange?.(profile.scoreSuggestionsEnabled);
       onRemindersChange?.(profile.dailyReminderEnabled);
       onReminderHourChange?.(profile.dailyReminderHour);
-      setPushNotificationsEnabled(profile.pushNotificationsEnabled);
+      const pushEnabled = profile.pushNotificationsEnabled && (permission === null || permission.status === 'granted');
+      setPushNotificationsEnabled(pushEnabled);
+      if (profile.pushNotificationsEnabled && !pushEnabled) void disableAppPushNotifications().catch(() => undefined);
       setNotifyTurns(profile.notifyTurns);
       setNotifyInvites(profile.notifyInvites);
       setNotifyGameUpdates(profile.notifyGameUpdates);
-    }).catch(() => undefined).finally(() => { if (active) setProfilePreferencesHydrated(true); });
+    }).catch(() => { if (active) setProfilePreferencesError(true); }).finally(() => { if (active) setProfilePreferencesHydrated(true); });
     return () => { active = false; };
-  }, [auth.user?.userId]);
+  }, [auth.user?.userId, settingsRetry]);
   useEffect(() => {
     if (!auth.user) {
       setLifecycleEmailsHydrated(false);
@@ -112,6 +125,7 @@ export function AccountScreen({ registrationRequest = 0, onOpenAdmin, scoreSugge
     }
     let active = true;
     setLifecycleEmailsHydrated(false);
+    setLifecycleEmailsError(false);
     void getLifecycleEmailPreference().then((preference) => {
       if (!active) return;
       setLifecycleEmailsEnabled(preference.enabled);
@@ -126,10 +140,24 @@ export function AccountScreen({ registrationRequest = 0, onOpenAdmin, scoreSugge
           { text: 'Turn on', onPress: () => { setLifecycleEmailsBusy(true); void updateLifecycleEmailPreference(true).then((saved) => setLifecycleEmailsEnabled(saved.enabled)).catch((caught) => setManagementError(caught instanceof Error ? caught.message : 'Unable to change email settings.')).finally(() => setLifecycleEmailsBusy(false)); } },
         ],
       );
-    }).catch(() => { if (active) setLifecycleEmailsHydrated(true); });
+    }).catch(() => { if (active) { setLifecycleEmailsError(true); setLifecycleEmailsHydrated(true); } });
     return () => { active = false; };
-  }, [auth.user?.userId]);
-  const savePreferences = (suggestions: boolean, reminders: boolean, hour: number, flags = { notifyTurns, notifyInvites, notifyGameUpdates }) => { if (auth.user) void updateMyPreferences(suggestions, reminders, hour, flags).catch(() => setManagementError('Your preference changed on this device, but could not be synced.')); };
+  }, [auth.user?.userId, settingsRetry]);
+  const queuePreferences = (suggestions: boolean, reminders: boolean, hour: number, flags?: { notifyTurns: boolean; notifyInvites: boolean; notifyGameUpdates: boolean }) => {
+    const request = preferencesQueue.current.then(() => updateMyPreferences(suggestions, reminders, hour, flags));
+    preferencesQueue.current = request.catch(() => undefined);
+    return request;
+  };
+  const savePreferences = (suggestions: boolean, reminders: boolean, hour: number) => { if (auth.user) void queuePreferences(suggestions, reminders, hour).catch(() => setManagementError('Your preference changed on this device, but could not be synced.')); };
+  const saveNotificationCategory = (key: 'notifyTurns' | 'notifyInvites' | 'notifyGameUpdates', value: boolean) => {
+    if (!auth.user || notificationCategoryBusy) return;
+    setNotificationCategoryBusy(true);
+    setPushNotificationsError('');
+    void queuePreferences(scoreSuggestionsEnabled, remindersEnabled, reminderHour, { notifyTurns, notifyInvites, notifyGameUpdates, [key]: value })
+      .then((profile) => { setNotifyTurns(profile.notifyTurns); setNotifyInvites(profile.notifyInvites); setNotifyGameUpdates(profile.notifyGameUpdates); })
+      .catch((caught) => setPushNotificationsError(caught instanceof Error ? caught.message : 'Unable to save notification settings.'))
+      .finally(() => setNotificationCategoryBusy(false));
+  };
   useEffect(() => { if (!resendSeconds) return; const timer = setInterval(() => setResendSeconds((value) => Math.max(0, value - 1)), 1000); return () => clearInterval(timer); }, [resendSeconds]);
 
   const saveProfile = async () => {
@@ -205,17 +233,48 @@ export function AccountScreen({ registrationRequest = 0, onOpenAdmin, scoreSugge
     <Text style={styles.preferenceSubheading}>Dice animation</Text><Text style={styles.preferenceHelp}>Choose how digital dice move. Tap a style to preview it.</Text>
     <View style={styles.animationGrid}>{diceAnimationOptions.map((option) => { const selected = diceAnimation === option.value; return <Pressable key={option.value} accessibilityRole="radio" accessibilityState={{ checked: selected }} onPress={() => { onDiceAnimationChange?.(option.value); setAnimationPreviewToken((token) => token + 1); void Haptics.selectionAsync(); }} style={({ pressed }) => [styles.animationChoice, selected && styles.animationChoiceSelected, pressed && { opacity: .75 }]}><AnimationPreview animation={option.value} active={selected} token={animationPreviewToken} /><View style={styles.animationCopy}><Text style={[styles.animationTitle, selected && styles.animationTitleSelected]}>{option.label}</Text><Text style={styles.animationDescription}>{option.description}</Text></View>{selected && <Ionicons name="checkmark-circle" size={18} color={colors.cyan} />}</Pressable>; })}</View>
 
-    <Text style={styles.sectionTitle}>Notifications</Text>
-    <Text style={styles.sectionDescription}>Choose app updates and your separate local Daily Challenge reminder.</Text>
-    <View style={[styles.preferenceRow, { marginBottom: 12 }]}><View style={styles.actionIcon}><Ionicons name="megaphone-outline" size={21} color={colors.pink} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>App notifications</Text><Text style={styles.actionDescription}>Remote-game turns, Daily results and occasional Yahtzee Hub updates</Text></View>{pushNotificationsBusy || !profilePreferencesHydrated ? <ActivityIndicator color={colors.cyan} /> : <Switch accessibilityLabel="App notifications" value={pushNotificationsEnabled} onValueChange={(value) => { setPushNotificationsBusy(true); setPushNotificationsError(''); void (value ? enableAppPushNotifications() : disableAppPushNotifications()).then(setPushNotificationsEnabled).catch((caught) => { setPushNotificationsEnabled(false); setPushNotificationsError(caught instanceof Error ? caught.message : 'Unable to change notification settings.'); }).finally(() => setPushNotificationsBusy(false)); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={pushNotificationsEnabled ? colors.cyan : colors.muted} />}</View>
-    {pushNotificationsError ? <Text style={[styles.error, { marginBottom: 12 }]}>{pushNotificationsError}</Text> : null}
-    {pushNotificationsEnabled && profilePreferencesHydrated && <>
-      <View style={[styles.preferenceRow, { marginBottom: 8 }]}><View style={styles.actionCopy}><Text style={styles.actionTitle}>Your turn</Text><Text style={styles.actionDescription}>When your opponent finishes their round</Text></View><AppToggle accessibilityLabel="Your turn notifications" value={notifyTurns} onValueChange={(value) => { setNotifyTurns(value); savePreferences(scoreSuggestionsEnabled, remindersEnabled, reminderHour, { notifyTurns: value, notifyInvites, notifyGameUpdates }); }} /></View>
-      <View style={[styles.preferenceRow, { marginBottom: 8 }]}><View style={styles.actionCopy}><Text style={styles.actionTitle}>Invites & rematches</Text><Text style={styles.actionDescription}>Challenges, responses and rematch requests</Text></View><AppToggle accessibilityLabel="Invites and rematches notifications" value={notifyInvites} onValueChange={(value) => { setNotifyInvites(value); savePreferences(scoreSuggestionsEnabled, remindersEnabled, reminderHour, { notifyTurns, notifyInvites: value, notifyGameUpdates }); }} /></View>
-      <View style={[styles.preferenceRow, { marginBottom: 12 }]}><View style={styles.actionCopy}><Text style={styles.actionTitle}>Game updates</Text><Text style={styles.actionDescription}>Remote-game results and when a game ends</Text></View><AppToggle accessibilityLabel="Game updates notifications" value={notifyGameUpdates} onValueChange={(value) => { setNotifyGameUpdates(value); savePreferences(scoreSuggestionsEnabled, remindersEnabled, reminderHour, { notifyTurns, notifyInvites, notifyGameUpdates: value }); }} /></View>
-    </>}
-    <View style={[styles.preferenceRow, { marginBottom: 12 }]}><View style={styles.actionIcon}><Ionicons name="mail-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Email updates</Text><Text style={styles.actionDescription}>Optional tips, reminders and app news. Unsubscribe at any time.</Text></View>{lifecycleEmailsBusy || !lifecycleEmailsHydrated ? <ActivityIndicator color={colors.cyan} /> : <Switch accessibilityLabel="Email updates" value={lifecycleEmailsEnabled} onValueChange={(value) => { setLifecycleEmailsBusy(true); setManagementError(''); void updateLifecycleEmailPreference(value).then((preference) => setLifecycleEmailsEnabled(preference.enabled)).catch((caught) => setManagementError(caught instanceof Error ? caught.message : 'Unable to change email settings.')).finally(() => setLifecycleEmailsBusy(false)); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={lifecycleEmailsEnabled ? colors.cyan : colors.muted} />}</View>
-    <View style={styles.notificationCard}><View style={styles.preferenceRowInner}><View style={styles.actionIcon}><Ionicons name="notifications-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Daily Challenge reminder</Text><Text style={styles.actionDescription}>{displayHour(reminderHour)} local time · Only sent if today’s challenge is still waiting</Text></View>{profilePreferencesHydrated ? <AppToggle accessibilityLabel="Daily Challenge reminder" value={remindersEnabled} onValueChange={(value) => { onRemindersChange?.(value); savePreferences(scoreSuggestionsEnabled, value, reminderHour); }} /> : <ActivityIndicator color={colors.cyan} />}</View>{profilePreferencesHydrated && remindersEnabled && <View style={styles.timeControl}><Pressable accessibilityLabel="Move reminder one hour earlier" onPress={() => { const hour = (reminderHour + 23) % 24; onReminderHourChange?.(hour); savePreferences(scoreSuggestionsEnabled, remindersEnabled, hour); }} style={styles.timeButton}><Ionicons name="remove" size={20} color={colors.cyan} /></Pressable><View><Text style={styles.timeValue}>{displayHour(reminderHour)}</Text><Text style={styles.timeLabel}>LOCAL TIME</Text></View><Pressable accessibilityLabel="Move reminder one hour later" onPress={() => { const hour = (reminderHour + 1) % 24; onReminderHourChange?.(hour); savePreferences(scoreSuggestionsEnabled, remindersEnabled, hour); }} style={styles.timeButton}><Ionicons name="add" size={20} color={colors.cyan} /></Pressable></View>}</View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Notification settings"
+      accessibilityState={{ expanded: notificationsExpanded }}
+      onPress={() => { setNotificationsExpanded((expanded) => !expanded); if (profilePreferencesError || lifecycleEmailsError) setSettingsRetry((retry) => retry + 1); }}
+      style={styles.notificationSectionHeader}
+    >
+      <View style={styles.actionCopy}>
+        <Text style={styles.sectionTitleCompact}>Notifications</Text>
+        <Text style={styles.notificationSummary}>{profilePreferencesError || lifecycleEmailsError ? 'Some settings unavailable · tap to retry' : !profilePreferencesHydrated || !lifecycleEmailsHydrated ? 'Loading settings…' : `App ${pushNotificationsEnabled ? 'on' : 'off'} · Email ${lifecycleEmailsEnabled ? 'on' : 'off'} · Daily ${remindersEnabled ? 'on' : 'off'}`}</Text>
+      </View>
+      <Ionicons name={notificationsExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.cyan} />
+    </Pressable>
+    {notificationsExpanded && <View style={styles.notificationGroups}>
+      <View style={styles.notificationCard}>
+        <View style={styles.preferenceRowInner}>
+          <View style={styles.actionIcon}><Ionicons name="megaphone-outline" size={21} color={colors.pink} /></View>
+          <View style={styles.actionCopy}><Text style={styles.actionTitle}>App notifications</Text><Text style={styles.actionDescription}>Remote games and game updates</Text></View>
+          {profilePreferencesError ? <Text style={styles.unavailableText}>Unavailable</Text> : pushNotificationsBusy || !profilePreferencesHydrated ? <ActivityIndicator color={colors.cyan} /> : <AppToggle accessibilityLabel="App notifications" value={pushNotificationsEnabled} onValueChange={(value) => { setPushNotificationsBusy(true); setPushNotificationsError(''); void (value ? enableAppPushNotifications() : disableAppPushNotifications()).then(setPushNotificationsEnabled).catch((caught) => { setPushNotificationsEnabled(!value); setPushNotificationsError(caught instanceof Error ? caught.message : 'Unable to change notification settings.'); }).finally(() => setPushNotificationsBusy(false)); }} />}
+        </View>
+        {pushNotificationsError ? <Text style={styles.error}>{pushNotificationsError}</Text> : null}
+        <Pressable accessibilityRole="button" accessibilityState={{ expanded: pushDetailsExpanded }} onPress={() => setPushDetailsExpanded((expanded) => !expanded)} style={styles.notificationDetailsButton}><Text style={styles.notificationDetailsText}>Remote game alerts</Text><Ionicons name={pushDetailsExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.cyan} /></Pressable>
+        {pushDetailsExpanded && (profilePreferencesError ? <Text style={styles.unavailableText}>Tap Notifications to retry loading these settings.</Text> : <View style={styles.notificationDetailGroup}>
+          <View style={styles.notificationDetailRow}><View style={styles.actionCopy}><Text style={styles.notificationDetailTitle}>Your turn</Text><Text style={styles.notificationDetailDescription}>When your opponent finishes a round</Text></View><AppToggle accessibilityLabel="Your turn notifications" disabled={!pushNotificationsEnabled || !profilePreferencesHydrated || notificationCategoryBusy} value={pushNotificationsEnabled && notifyTurns} onValueChange={(value) => saveNotificationCategory('notifyTurns', value)} /></View>
+          <View style={styles.notificationDetailRow}><View style={styles.actionCopy}><Text style={styles.notificationDetailTitle}>Invites & rematches</Text><Text style={styles.notificationDetailDescription}>Challenges and responses</Text></View><AppToggle accessibilityLabel="Invites and rematches notifications" disabled={!pushNotificationsEnabled || !profilePreferencesHydrated || notificationCategoryBusy} value={pushNotificationsEnabled && notifyInvites} onValueChange={(value) => saveNotificationCategory('notifyInvites', value)} /></View>
+          <View style={styles.notificationDetailRow}><View style={styles.actionCopy}><Text style={styles.notificationDetailTitle}>Game updates</Text><Text style={styles.notificationDetailDescription}>Results and ended games</Text></View><AppToggle accessibilityLabel="Game updates notifications" disabled={!pushNotificationsEnabled || !profilePreferencesHydrated || notificationCategoryBusy} value={pushNotificationsEnabled && notifyGameUpdates} onValueChange={(value) => saveNotificationCategory('notifyGameUpdates', value)} /></View>
+        </View>)}
+      </View>
+      <View style={styles.notificationCard}><View style={styles.preferenceRowInner}>
+        <View style={styles.actionIcon}><Ionicons name="mail-outline" size={21} color={colors.yellow} /></View>
+        <View style={styles.actionCopy}><Text style={styles.actionTitle}>Email updates</Text><Text style={styles.actionDescription}>Optional tips and app news</Text></View>
+        {lifecycleEmailsError ? <Text style={styles.unavailableText}>Unavailable</Text> : lifecycleEmailsBusy || !lifecycleEmailsHydrated ? <ActivityIndicator color={colors.cyan} /> : <AppToggle accessibilityLabel="Email updates" value={lifecycleEmailsEnabled} onValueChange={(value) => { setLifecycleEmailsBusy(true); setManagementError(''); void updateLifecycleEmailPreference(value).then((preference) => setLifecycleEmailsEnabled(preference.enabled)).catch((caught) => setManagementError(caught instanceof Error ? caught.message : 'Unable to change email settings.')).finally(() => setLifecycleEmailsBusy(false)); }} />}
+      </View></View>
+      <View style={styles.notificationCard}><View style={styles.preferenceRowInner}>
+        <View style={styles.actionIcon}><Ionicons name="notifications-outline" size={21} color={colors.yellow} /></View>
+        <View style={styles.actionCopy}><Text style={styles.actionTitle}>Daily reminder</Text><Text style={styles.actionDescription}>{displayHour(reminderHour)} local time</Text></View>
+        {profilePreferencesError ? <Text style={styles.unavailableText}>Unavailable</Text> : profilePreferencesHydrated ? <AppToggle accessibilityLabel="Daily Challenge reminder" value={remindersEnabled} onValueChange={(value) => { onRemindersChange?.(value); savePreferences(scoreSuggestionsEnabled, value, reminderHour); }} /> : <ActivityIndicator color={colors.cyan} />}
+      </View>
+        {!profilePreferencesError && remindersEnabled && <Pressable accessibilityRole="button" accessibilityState={{ expanded: reminderDetailsExpanded }} onPress={() => setReminderDetailsExpanded((expanded) => !expanded)} style={styles.notificationDetailsButton}><Text style={styles.notificationDetailsText}>Reminder time</Text><Ionicons name={reminderDetailsExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={colors.cyan} /></Pressable>}
+        {!profilePreferencesError && remindersEnabled && reminderDetailsExpanded && <View style={styles.timeControl}><Pressable accessibilityLabel="Move reminder one hour earlier" onPress={() => { const hour = (reminderHour + 23) % 24; onReminderHourChange?.(hour); savePreferences(scoreSuggestionsEnabled, remindersEnabled, hour); }} style={styles.timeButton}><Ionicons name="remove" size={20} color={colors.cyan} /></Pressable><View><Text style={styles.timeValue}>{displayHour(reminderHour)}</Text><Text style={styles.timeLabel}>LOCAL TIME</Text></View><Pressable accessibilityLabel="Move reminder one hour later" onPress={() => { const hour = (reminderHour + 1) % 24; onReminderHourChange?.(hour); savePreferences(scoreSuggestionsEnabled, remindersEnabled, hour); }} style={styles.timeButton}><Ionicons name="add" size={20} color={colors.cyan} /></Pressable></View>}
+      </View>
+    </View>}
 
     <Text style={styles.sectionTitle}>Security & access</Text>
     <Text style={styles.sectionDescription}>This account is shared by the Yahtzee website and mobile app.</Text>
@@ -321,8 +380,8 @@ export function AccountScreen({ registrationRequest = 0, onOpenAdmin, scoreSugge
     {(mode === 'confirm' || mode === 'confirmReset') && <><Text style={styles.authLabel}>Six-digit code</Text><TextInput value={code} onChangeText={(value) => setCode(cleanCode(value))} placeholder="000000" placeholderTextColor={colors.muted} style={[styles.input, styles.codeInput]} keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="one-time-code" maxLength={6} /></>}
     {(mode === 'login' || mode === 'register' || mode === 'confirmReset') && <><Text style={styles.authLabel}>{mode === 'confirmReset' ? 'New password' : 'Password'}</Text><View style={styles.passwordRow}><TextInput value={password} onChangeText={(value) => { setPassword(value); setError(''); }} placeholder={mode === 'login' ? 'Enter your password' : 'At least 8 characters'} placeholderTextColor={colors.muted} style={styles.passwordInput} secureTextEntry={!showPassword} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} /><Pressable accessibilityLabel={showPassword ? 'Hide password' : 'Show password'} onPress={() => setShowPassword((value) => !value)} style={styles.eyeButton}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color={colors.cyan} /></Pressable></View></>}
     {(mode === 'register' || mode === 'confirmReset') && <><Text style={styles.authLabel}>Confirm password</Text><TextInput value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Re-enter password" placeholderTextColor={colors.muted} style={styles.input} secureTextEntry={!showPassword} autoComplete="new-password" /><Text style={styles.passwordHint}>Use at least 8 characters.</Text></>}
-    {mode === 'register' && <View style={styles.signUpReminder}><View style={styles.signUpReminderCopy}><Text style={styles.signUpReminderTitle}>Daily reminder at 7:00 pm</Text><Text style={styles.signUpReminderText}>After verification, your device will request permission. Reminders are skipped once you complete that day’s challenge.</Text></View><Switch accessibilityLabel="Enable a 7 pm Daily Challenge reminder after sign up" value={registrationReminderOptIn} onValueChange={setRegistrationReminderOptIn} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={registrationReminderOptIn ? colors.cyan : colors.muted} /></View>}
-    {mode === 'register' && <View style={styles.signUpReminder}><View style={styles.signUpReminderCopy}><Text style={styles.signUpReminderTitle}>Email me occasional updates</Text><Text style={styles.signUpReminderText}>Useful game tips, reminders and Yahtzee Hub news. Optional, and you can unsubscribe at any time.</Text></View><Switch accessibilityLabel="Email me occasional Yahtzee Hub updates" value={registrationEmailOptIn} onValueChange={setRegistrationEmailOptIn} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={registrationEmailOptIn ? colors.cyan : colors.muted} /></View>}
+    {mode === 'register' && <View style={styles.signUpReminder}><View style={styles.signUpReminderCopy}><Text style={styles.signUpReminderTitle}>Daily reminder at 7:00 pm</Text><Text style={styles.signUpReminderText}>After verification, your device will request permission. Reminders are skipped once you complete that day’s challenge.</Text></View><AppToggle accessibilityLabel="Enable a 7 pm Daily Challenge reminder after sign up" value={registrationReminderOptIn} onValueChange={setRegistrationReminderOptIn} /></View>}
+    {mode === 'register' && <View style={styles.signUpReminder}><View style={styles.signUpReminderCopy}><Text style={styles.signUpReminderTitle}>Email me occasional updates</Text><Text style={styles.signUpReminderText}>Useful game tips, reminders and Yahtzee Hub news. Optional, and you can unsubscribe at any time.</Text></View><AppToggle accessibilityLabel="Email me occasional Yahtzee Hub updates" value={registrationEmailOptIn} onValueChange={setRegistrationEmailOptIn} /></View>}
     {error ? <Text style={styles.error}>{error}</Text> : null}
     <Pressable disabled={busy} onPress={() => void submit()} style={styles.button}><Text style={styles.buttonText}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign In' : mode === 'register' ? 'Create Account' : mode === 'requestReset' ? 'Send Reset Code' : mode === 'confirmReset' ? 'Reset Password' : 'Verify Email'}</Text></Pressable>
     {mode === 'confirm' && <Pressable disabled={busy || resendSeconds > 0} onPress={() => void auth.resendRegistrationCode(email).then(() => { setResendSeconds(30); Alert.alert('New code sent', `Check ${maskedEmail(email)}.`); }).catch((caught) => setError(friendlyAuthError(caught)))}><Text style={[styles.link, resendSeconds > 0 && styles.disabledLink]}>{resendSeconds > 0 ? `Resend code in ${resendSeconds}s` : 'Resend verification code'}</Text></Pressable>}
@@ -341,6 +400,17 @@ const styles = StyleSheet.create({
   preferenceRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 13, padding: 12 },
   preferenceSubheading: { color: colors.white, fontSize: 15, fontWeight: '900', marginTop: 17, marginBottom: 3 }, preferenceHelp: { color: colors.muted, fontSize: 11, lineHeight: 16, marginBottom: 9 }, animationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, animationChoice: { width: '48.5%', minHeight: 126, alignItems: 'center', justifyContent: 'center', padding: 9, borderRadius: 12, borderColor: '#2d3c40', borderWidth: 1, backgroundColor: colors.surface }, animationChoiceSelected: { borderColor: colors.cyan, backgroundColor: '#152326' }, animationCopy: { alignItems: 'center' }, animationTitle: { color: colors.white, fontSize: 12, fontWeight: '900', textAlign: 'center' }, animationTitleSelected: { color: colors.cyan }, animationDescription: { color: colors.muted, fontSize: 8.5, lineHeight: 12, marginTop: 2, textAlign: 'center' },
   notificationCard: { backgroundColor: colors.surface, borderColor: '#2d3c40', borderWidth: 1, borderRadius: 13, padding: 12 }, preferenceRowInner: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10 }, timeControl: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, paddingTop: 10, paddingHorizontal: 12, borderTopColor: '#2d3c40', borderTopWidth: 1 }, timeButton: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', borderColor: '#315a5e', borderWidth: 1, backgroundColor: colors.background }, timeValue: { color: colors.yellow, fontSize: 17, fontWeight: '900', textAlign: 'center' }, timeLabel: { color: colors.muted, fontSize: 8, fontWeight: '900', letterSpacing: 1, textAlign: 'center', marginTop: 2 },
+  notificationSectionHeader: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 28, paddingHorizontal: 15, paddingVertical: 11, borderWidth: 1, borderRadius: 13, borderColor: '#315a5e', backgroundColor: colors.surface },
+  sectionTitleCompact: { color: colors.cyan, fontSize: 19, fontWeight: '900' },
+  notificationSummary: { color: colors.muted, fontSize: 10, marginTop: 3 },
+  unavailableText: { color: colors.muted, fontSize: 10, fontWeight: '800' },
+  notificationGroups: { gap: 9, marginTop: 9 },
+  notificationDetailsButton: { minHeight: 35, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 7, paddingTop: 7, paddingHorizontal: 4, borderTopWidth: 1, borderTopColor: '#2d3c40' },
+  notificationDetailsText: { color: colors.cyan, fontSize: 11, fontWeight: '800' },
+  notificationDetailGroup: { borderTopWidth: 1, borderTopColor: '#2d3c40' },
+  notificationDetailRow: { minHeight: 57, flexDirection: 'row', alignItems: 'center', gap: 10, borderBottomWidth: 1, borderBottomColor: '#263337' },
+  notificationDetailTitle: { color: colors.white, fontSize: 12, fontWeight: '800' },
+  notificationDetailDescription: { color: colors.muted, fontSize: 10, marginTop: 2 },
   avatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: '#20383b', borderColor: colors.cyan, borderWidth: 1, alignItems: 'center', justifyContent: 'center' }, avatarText: { color: colors.cyan, fontSize: 25, fontWeight: '900' },
   profileDetails: { flex: 1, marginLeft: 15 }, username: { color: colors.yellow, fontSize: 22, fontWeight: '900' }, email: { color: colors.mint, marginTop: 3 }, statusRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 }, statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.cyan, marginRight: 6 }, statusText: { color: colors.muted, fontSize: 12, fontWeight: '700' },
   sectionTitle: { color: colors.cyan, fontSize: 19, fontWeight: '900', marginTop: 28, marginBottom: 8 }, sectionDescription: { color: colors.mint, lineHeight: 21, marginBottom: 17 },
