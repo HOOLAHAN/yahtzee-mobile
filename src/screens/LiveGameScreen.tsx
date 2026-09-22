@@ -4,7 +4,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import NetInfo from '@react-native-community/netinfo';
-import Constants from 'expo-constants';
 import { AppText as Text } from '../components/AppText';
 import { categories, Category, DieFace, isCategoryEligibleForRoll, repeatYahtzeeBonus, scoreCategoryForTurn, totalScore } from '../lib/game';
 import { resultMetrics } from '../lib/engagement';
@@ -13,18 +12,13 @@ import { createLiveGame, fetchLiveGame, fetchMyLiveGames, joinLiveGame, LiveGame
 import { useAuth } from '../state/AuthContext';
 import { colors, playerProfiles } from '../theme';
 import { DiceAnimation } from '../lib/diceAnimation';
-import QRCode from 'react-native-qrcode-svg';
 import { AnimatedGameDie } from '../components/AnimatedGameDie';
 import { RemoteResultDetails } from '../components/RemoteResultDetails';
 
 const activeGameKey = 'yahtzee.live-game.active.v1';
 const recordedPrefix = 'yahtzee.live-game.recorded.';
 const labels: Record<Category, string> = { Ones: 'Ones', Twos: 'Twos', Threes: 'Threes', Fours: 'Fours', Fives: 'Fives', Sixes: 'Sixes', 'Three of a Kind': '3 of a Kind', 'Four of a Kind': '4 of a Kind', 'Full House': 'Full House', 'Small Straight': 'Sm. Straight', 'Large Straight': 'Lg. Straight', Yahtzee: 'Yahtzee', Chance: 'Chance' };
-const appVariant = Constants.expoConfig?.extra?.appVariant;
-const invitePath = appVariant === 'development' ? 'play-dev' : appVariant === 'preview' ? 'play-preview' : 'play';
-const appInviteUrl = (code: string) => `https://yahtzee.ijrhservices.co.uk/${invitePath}?join=${code}`;
-const webInviteUrl = (code: string) => `https://yahtzee.ijrhservices.co.uk/?join=${code}`;
-const inviteMessage = (code: string) => `Join my Yahtzee Hub remote game.\n\nOpen in the app:\n${appInviteUrl(code)}\n\nPlay on the website:\n${webInviteUrl(code)}\n\nGame code: ${code}`;
+const inviteMessage = (code: string) => `Join my Yahtzee Hub remote game.\n\nOpen Yahtzee Hub on the app or website, choose Remote Game, then enter this code: ${code}\n\nThe invitation expires after 24 hours.`;
 
 export function LiveGameScreen({ requestedGameId, requestedCode, diceAnimation, onClose, onOpenAccount }: { requestedGameId?: string | null; requestedCode?: string | null; diceAnimation: DiceAnimation; onClose: () => void; onOpenAccount: () => void }) {
   const { user } = useAuth();
@@ -39,7 +33,6 @@ export function LiveGameScreen({ requestedGameId, requestedCode, diceAnimation, 
   const [rollToken, setRollToken] = useState(0);
   const [connection, setConnection] = useState<'live' | 'reconnecting' | 'offline'>('reconnecting');
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
-  const [showInviteQr, setShowInviteQr] = useState(false);
   const [manualRefreshing, setManualRefreshing] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const holdQueue = useRef<Promise<void>>(Promise.resolve());
@@ -153,7 +146,7 @@ export function LiveGameScreen({ requestedGameId, requestedCode, diceAnimation, 
     <View style={styles.topRow}><View><Text style={styles.eyebrow}>TWO DEVICES</Text><Text style={styles.title}>Remote game</Text></View><Pressable onPress={onClose} style={styles.otherGamesButton}><Ionicons name="grid-outline" size={17} color={colors.mint} /><Text style={styles.otherGamesText}>Other games</Text></Pressable></View>
     <View style={styles.hero}><Ionicons name="phone-portrait-outline" size={28} color={colors.cyan} /><View style={styles.heroCopy}><Text style={styles.heroTitle}>Take turns from anywhere</Text><Text style={styles.copy}>Create a game to share its code, or enter a friend’s six-digit code.</Text></View></View>
     {!game && resumeGames.map((item) => <Pressable key={item.id} onPress={() => void openGame(item)} style={styles.resumeCard}><View><Text style={styles.cardTitle}>{item.status === 'INVITED' ? item.guestUserId === user.userId ? `Challenge from ${item.hostUsername}` : `Challenge sent to ${item.guestUsername}` : item.status === 'WAITING' ? 'Waiting for opponent' : `Game with ${item.hostUserId === user.userId ? item.guestUsername : item.hostUsername}`}</Text><Text style={styles.cardMeta}>{item.status === 'INVITED' ? item.guestUserId === user.userId ? 'Accept or decline' : 'Awaiting response' : `Code ${item.code} · ${item.currentUserId === user.userId ? 'Your turn' : 'Their turn'}`}</Text></View><Ionicons name="chevron-forward" size={20} color={colors.cyan} /></Pressable>)}
-    {game ? <View style={styles.inviteCard}><View style={styles.inviteHeader}><View style={styles.waitIconSmall}><Ionicons name="hourglass-outline" size={21} color={colors.yellow} /></View><View style={styles.heroCopy}><Text style={styles.createTitle}>Waiting for another player</Text><Text style={styles.copy}>Share separate app and website links. Invitations expire after 24 hours.</Text></View></View><Text accessibilityLabel={`Game code ${game.code.split('').join(' ')}`} style={styles.lobbyCode}>{game.code}</Text>{showInviteQr && <View style={styles.inviteQr}><QRCode value={appInviteUrl(game.code)} size={150} color={colors.background} backgroundColor="#ffffff" /></View>}<View style={styles.inviteActions}><Pressable onPress={() => void Share.share({ title: 'Join my Yahtzee game', message: inviteMessage(game.code) })} style={styles.shareButton}><Ionicons name="share-outline" size={18} color={colors.background} /><Text style={styles.primaryText}>Share</Text></Pressable><Pressable onPress={() => setShowInviteQr((visible) => !visible)} style={styles.qrInviteButton}><Ionicons name={showInviteQr ? 'close-outline' : 'qr-code-outline'} size={18} color={colors.yellow} /><Text style={styles.qrInviteText}>{showInviteQr ? 'Hide QR' : 'QR'}</Text></Pressable><Pressable onPress={leave} style={styles.cancelButton}><Ionicons name="close-outline" size={18} color={colors.pink} /><Text style={styles.dangerText}>Cancel</Text></Pressable></View></View> : <Pressable disabled={busy} onPress={() => void create()} style={[styles.createCard, busy && styles.disabled]}><View style={styles.createIcon}><Ionicons name="add" size={25} color={colors.background} /></View><View style={styles.heroCopy}><Text style={styles.createTitle}>Start a game</Text><Text style={styles.copy}>Get a code and invite another player.</Text></View></Pressable>}
+    {game ? <View style={styles.inviteCard}><View style={styles.inviteHeader}><View style={styles.waitIconSmall}><Ionicons name="hourglass-outline" size={21} color={colors.yellow} /></View><View style={styles.heroCopy}><Text style={styles.createTitle}>Waiting for another player</Text><Text style={styles.copy}>Share the six-digit code with a friend. Invitations expire after 24 hours.</Text></View></View><Text accessibilityLabel={`Game code ${game.code.split('').join(' ')}`} style={styles.lobbyCode}>{game.code}</Text><View style={styles.inviteActions}><Pressable onPress={() => void Share.share({ title: 'Join my Yahtzee game', message: inviteMessage(game.code) })} style={styles.shareButton}><Ionicons name="share-outline" size={18} color={colors.background} /><Text style={styles.primaryText}>Share</Text></Pressable><Pressable onPress={leave} style={styles.cancelButton}><Ionicons name="close-outline" size={18} color={colors.pink} /><Text style={styles.dangerText}>Cancel</Text></Pressable></View></View> : <Pressable disabled={busy} onPress={() => void create()} style={[styles.createCard, busy && styles.disabled]}><View style={styles.createIcon}><Ionicons name="add" size={25} color={colors.background} /></View><View style={styles.heroCopy}><Text style={styles.createTitle}>Start a game</Text><Text style={styles.copy}>Get a code and invite another player.</Text></View></Pressable>}
     <View style={styles.joinCard}><Text style={styles.cardTitle}>Join with a code</Text><TextInput accessibilityLabel="Six-digit game code" value={code} onChangeText={(value) => setCode(value.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" maxLength={6} placeholder="000000" placeholderTextColor={colors.muted} style={styles.codeInput} /><Pressable disabled={busy || code.length !== 6} onPress={() => void join()} style={[styles.primary, (busy || code.length !== 6) && styles.disabled]}><Text style={styles.primaryText}>{busy ? 'Joining…' : 'Join Game'}</Text></Pressable></View>
     {error ? <Text style={styles.error}>{error}</Text> : null}
   </ScrollView>;
@@ -234,9 +227,6 @@ const styles = StyleSheet.create({
   resultActions: { width: '100%', flexDirection: 'row', gap: 8, marginTop: 12 },
   rematchButton: { flex: 1, minHeight: 44, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: colors.cyan },
   resultShareButton: { flex: 1, minHeight: 44, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: colors.cyan },
-  inviteQr: { alignSelf: 'center', padding: 8, marginBottom: 13, borderRadius: 10, backgroundColor: '#ffffff' },
-  qrInviteButton: { minHeight: 46, paddingHorizontal: 10, borderRadius: 11, borderWidth: 1, borderColor: colors.yellow, flexDirection: 'row', gap: 4, alignItems: 'center', justifyContent: 'center' },
-  qrInviteText: { color: colors.yellow, fontSize: 10, fontWeight: '900' },
   connectionBar: { minHeight: 22, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: '#112326' },
   connectionWarning: { backgroundColor: '#29260f' },
   connectionDot: { width: 6, height: 6, borderRadius: 3 },
