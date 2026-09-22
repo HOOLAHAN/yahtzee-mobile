@@ -3,8 +3,8 @@ import { generateClient } from 'aws-amplify/api';
 import { graphqlWithDevLog } from '../lib/apiLogger';
 
 const client = generateClient();
-export interface UserProfile { userId: string; username: string; firstName: string; lastName: string; scoreSuggestionsEnabled: boolean; dailyReminderEnabled: boolean; dailyReminderHour: number; pushNotificationsEnabled: boolean }
-const fields = 'userId username firstName lastName scoreSuggestionsEnabled dailyReminderEnabled dailyReminderHour pushNotificationsEnabled';
+export interface UserProfile { userId: string; username: string; firstName: string; lastName: string; scoreSuggestionsEnabled: boolean; dailyReminderEnabled: boolean; dailyReminderHour: number; pushNotificationsEnabled: boolean; notifyTurns: boolean; notifyInvites: boolean; notifyGameUpdates: boolean }
+const fields = 'userId username firstName lastName scoreSuggestionsEnabled dailyReminderEnabled dailyReminderHour pushNotificationsEnabled notifyTurns notifyInvites notifyGameUpdates';
 
 export async function usernameAvailable(username: string) {
   const result = await graphqlWithDevLog(client, { query: `query Available($username:String!){usernameAvailable(username:$username)}`, authMode: 'apiKey', variables: { username } });
@@ -38,9 +38,9 @@ export async function updateMyProfile(username: string, firstName: string, lastN
   return profileResult<UserProfile>(result, 'updateMyProfile', 'Unable to update profile. Please try again.');
 }
 
-export async function updateMyPreferences(scoreSuggestionsEnabled: boolean, dailyReminderEnabled: boolean, dailyReminderHour: number): Promise<UserProfile> {
-  const query = `mutation Preferences($scoreSuggestionsEnabled:Boolean!,$dailyReminderEnabled:Boolean!,$dailyReminderHour:Int!){updateMyPreferences(scoreSuggestionsEnabled:$scoreSuggestionsEnabled,dailyReminderEnabled:$dailyReminderEnabled,dailyReminderHour:$dailyReminderHour){${fields}}}`;
-  const result = await authenticatedGraphql(query, { scoreSuggestionsEnabled, dailyReminderEnabled, dailyReminderHour });
+export async function updateMyPreferences(scoreSuggestionsEnabled: boolean, dailyReminderEnabled: boolean, dailyReminderHour: number, notifications?: { notifyTurns: boolean; notifyInvites: boolean; notifyGameUpdates: boolean }): Promise<UserProfile> {
+  const query = `mutation Preferences($scoreSuggestionsEnabled:Boolean!,$dailyReminderEnabled:Boolean!,$dailyReminderHour:Int!,$notifyTurns:Boolean,$notifyInvites:Boolean,$notifyGameUpdates:Boolean){updateMyPreferences(scoreSuggestionsEnabled:$scoreSuggestionsEnabled,dailyReminderEnabled:$dailyReminderEnabled,dailyReminderHour:$dailyReminderHour,notifyTurns:$notifyTurns,notifyInvites:$notifyInvites,notifyGameUpdates:$notifyGameUpdates){${fields}}}`;
+  const result = await authenticatedGraphql(query, { scoreSuggestionsEnabled, dailyReminderEnabled, dailyReminderHour, ...notifications });
   return profileResult<UserProfile>(result, 'updateMyPreferences', 'Unable to save preferences. Please try again.');
 }
 

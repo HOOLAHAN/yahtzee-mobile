@@ -72,6 +72,9 @@ export function AccountScreen({ registrationRequest = 0, onOpenAdmin, scoreSugge
   const [lifecycleEmailsBusy, setLifecycleEmailsBusy] = useState(false);
   const [lifecycleEmailsHydrated, setLifecycleEmailsHydrated] = useState(false);
   const [pushNotificationsEnabled, setPushNotificationsEnabled] = useState(false);
+  const [notifyTurns, setNotifyTurns] = useState(true);
+  const [notifyInvites, setNotifyInvites] = useState(true);
+  const [notifyGameUpdates, setNotifyGameUpdates] = useState(true);
   const [pushNotificationsBusy, setPushNotificationsBusy] = useState(false);
   const [profilePreferencesHydrated, setProfilePreferencesHydrated] = useState(false);
   const [pushNotificationsError, setPushNotificationsError] = useState('');
@@ -94,6 +97,9 @@ export function AccountScreen({ registrationRequest = 0, onOpenAdmin, scoreSugge
       onRemindersChange?.(profile.dailyReminderEnabled);
       onReminderHourChange?.(profile.dailyReminderHour);
       setPushNotificationsEnabled(profile.pushNotificationsEnabled);
+      setNotifyTurns(profile.notifyTurns);
+      setNotifyInvites(profile.notifyInvites);
+      setNotifyGameUpdates(profile.notifyGameUpdates);
     }).catch(() => undefined).finally(() => { if (active) setProfilePreferencesHydrated(true); });
     return () => { active = false; };
   }, [auth.user?.userId]);
@@ -123,7 +129,7 @@ export function AccountScreen({ registrationRequest = 0, onOpenAdmin, scoreSugge
     }).catch(() => { if (active) setLifecycleEmailsHydrated(true); });
     return () => { active = false; };
   }, [auth.user?.userId]);
-  const savePreferences = (suggestions: boolean, reminders: boolean, hour: number) => { if (auth.user) void updateMyPreferences(suggestions, reminders, hour).catch(() => setManagementError('Your preference changed on this device, but could not be synced.')); };
+  const savePreferences = (suggestions: boolean, reminders: boolean, hour: number, flags = { notifyTurns, notifyInvites, notifyGameUpdates }) => { if (auth.user) void updateMyPreferences(suggestions, reminders, hour, flags).catch(() => setManagementError('Your preference changed on this device, but could not be synced.')); };
   useEffect(() => { if (!resendSeconds) return; const timer = setInterval(() => setResendSeconds((value) => Math.max(0, value - 1)), 1000); return () => clearInterval(timer); }, [resendSeconds]);
 
   const saveProfile = async () => {
@@ -203,6 +209,11 @@ export function AccountScreen({ registrationRequest = 0, onOpenAdmin, scoreSugge
     <Text style={styles.sectionDescription}>Choose app updates and your separate local Daily Challenge reminder.</Text>
     <View style={[styles.preferenceRow, { marginBottom: 12 }]}><View style={styles.actionIcon}><Ionicons name="megaphone-outline" size={21} color={colors.pink} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>App notifications</Text><Text style={styles.actionDescription}>Remote-game turns, Daily results and occasional Yahtzee Hub updates</Text></View>{pushNotificationsBusy || !profilePreferencesHydrated ? <ActivityIndicator color={colors.cyan} /> : <Switch accessibilityLabel="App notifications" value={pushNotificationsEnabled} onValueChange={(value) => { setPushNotificationsBusy(true); setPushNotificationsError(''); void (value ? enableAppPushNotifications() : disableAppPushNotifications()).then(setPushNotificationsEnabled).catch((caught) => { setPushNotificationsEnabled(false); setPushNotificationsError(caught instanceof Error ? caught.message : 'Unable to change notification settings.'); }).finally(() => setPushNotificationsBusy(false)); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={pushNotificationsEnabled ? colors.cyan : colors.muted} />}</View>
     {pushNotificationsError ? <Text style={[styles.error, { marginBottom: 12 }]}>{pushNotificationsError}</Text> : null}
+    {pushNotificationsEnabled && profilePreferencesHydrated && <>
+      <View style={[styles.preferenceRow, { marginBottom: 8 }]}><View style={styles.actionCopy}><Text style={styles.actionTitle}>Your turn</Text><Text style={styles.actionDescription}>When your opponent finishes their round</Text></View><AppToggle accessibilityLabel="Your turn notifications" value={notifyTurns} onValueChange={(value) => { setNotifyTurns(value); savePreferences(scoreSuggestionsEnabled, remindersEnabled, reminderHour, { notifyTurns: value, notifyInvites, notifyGameUpdates }); }} /></View>
+      <View style={[styles.preferenceRow, { marginBottom: 8 }]}><View style={styles.actionCopy}><Text style={styles.actionTitle}>Invites & rematches</Text><Text style={styles.actionDescription}>Challenges, responses and rematch requests</Text></View><AppToggle accessibilityLabel="Invites and rematches notifications" value={notifyInvites} onValueChange={(value) => { setNotifyInvites(value); savePreferences(scoreSuggestionsEnabled, remindersEnabled, reminderHour, { notifyTurns, notifyInvites: value, notifyGameUpdates }); }} /></View>
+      <View style={[styles.preferenceRow, { marginBottom: 12 }]}><View style={styles.actionCopy}><Text style={styles.actionTitle}>Game updates</Text><Text style={styles.actionDescription}>Remote-game results and when a game ends</Text></View><AppToggle accessibilityLabel="Game updates notifications" value={notifyGameUpdates} onValueChange={(value) => { setNotifyGameUpdates(value); savePreferences(scoreSuggestionsEnabled, remindersEnabled, reminderHour, { notifyTurns, notifyInvites, notifyGameUpdates: value }); }} /></View>
+    </>}
     <View style={[styles.preferenceRow, { marginBottom: 12 }]}><View style={styles.actionIcon}><Ionicons name="mail-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Email updates</Text><Text style={styles.actionDescription}>Optional tips, reminders and app news. Unsubscribe at any time.</Text></View>{lifecycleEmailsBusy || !lifecycleEmailsHydrated ? <ActivityIndicator color={colors.cyan} /> : <Switch accessibilityLabel="Email updates" value={lifecycleEmailsEnabled} onValueChange={(value) => { setLifecycleEmailsBusy(true); setManagementError(''); void updateLifecycleEmailPreference(value).then((preference) => setLifecycleEmailsEnabled(preference.enabled)).catch((caught) => setManagementError(caught instanceof Error ? caught.message : 'Unable to change email settings.')).finally(() => setLifecycleEmailsBusy(false)); }} trackColor={{ false: '#344247', true: '#315a5e' }} thumbColor={lifecycleEmailsEnabled ? colors.cyan : colors.muted} />}</View>
     <View style={styles.notificationCard}><View style={styles.preferenceRowInner}><View style={styles.actionIcon}><Ionicons name="notifications-outline" size={21} color={colors.yellow} /></View><View style={styles.actionCopy}><Text style={styles.actionTitle}>Daily Challenge reminder</Text><Text style={styles.actionDescription}>{displayHour(reminderHour)} local time · Only sent if today’s challenge is still waiting</Text></View>{profilePreferencesHydrated ? <AppToggle accessibilityLabel="Daily Challenge reminder" value={remindersEnabled} onValueChange={(value) => { onRemindersChange?.(value); savePreferences(scoreSuggestionsEnabled, value, reminderHour); }} /> : <ActivityIndicator color={colors.cyan} />}</View>{profilePreferencesHydrated && remindersEnabled && <View style={styles.timeControl}><Pressable accessibilityLabel="Move reminder one hour earlier" onPress={() => { const hour = (reminderHour + 23) % 24; onReminderHourChange?.(hour); savePreferences(scoreSuggestionsEnabled, remindersEnabled, hour); }} style={styles.timeButton}><Ionicons name="remove" size={20} color={colors.cyan} /></Pressable><View><Text style={styles.timeValue}>{displayHour(reminderHour)}</Text><Text style={styles.timeLabel}>LOCAL TIME</Text></View><Pressable accessibilityLabel="Move reminder one hour later" onPress={() => { const hour = (reminderHour + 1) % 24; onReminderHourChange?.(hour); savePreferences(scoreSuggestionsEnabled, remindersEnabled, hour); }} style={styles.timeButton}><Ionicons name="add" size={20} color={colors.cyan} /></Pressable></View>}</View>
 
