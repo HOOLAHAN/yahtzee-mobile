@@ -23,6 +23,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...config.ios,
       bundleIdentifier: `com.iainhoolahan.yahtzee${current.bundleSuffix}`,
       associatedDomains: ['applinks:yahtzee.ijrhservices.co.uk'],
+      entitlements: {
+        ...config.ios?.entitlements,
+        'com.apple.developer.game-center': true,
+      },
     },
     android: {
       ...config.android,
