@@ -149,7 +149,7 @@ export default function App() {
       <PendingScoreSync />
       <SafeAreaView style={[styles.safeArea, arcadeModeEnabled && styles.arcadeSafeArea]}>
         <StatusBar style="light" />
-        <View style={[styles.header, arcadeModeEnabled && styles.arcadeHeader]}><Image source={require('./assets/yahtzee-dice-logo.png')} style={styles.logoImage} /><Text numberOfLines={1} style={[styles.logo, arcadeModeEnabled && styles.arcadeLogo]}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
+        <View style={[styles.header, arcadeModeEnabled && styles.arcadeHeader]}><Image source={require('./assets/yahtzee-dice-logo-transparent.png')} style={styles.logoImage} /><Text numberOfLines={1} style={[styles.logo, arcadeModeEnabled && styles.arcadeLogo]}>{headerTitle}</Text><View style={styles.logoSpacer} /></View>
         <View style={[styles.screen, arcadeModeEnabled && styles.arcadeScreen]}>
           <View style={[styles.tabScreen, tab !== 'game' && styles.hiddenTab]}><GameScreen resumeRequest={resumeGameRequest} liveGameRequest={liveGameRequest} onPlayNavigationChange={handlePlayNavigationChange} onHeaderTitleChange={setGameHeaderTitle} scoreSuggestionsEnabled={scoreSuggestionsEnabled} diceAnimation={diceAnimation} dailyLaunchRequest={dailyLaunchRequest} remindersEnabled={remindersEnabled} onRequestReminders={() => void changeReminders(true)} onDailyCompleted={handleDailyCompleted} onOpenDailyLeaderboard={() => { setDailyLeaderboardRequest((value) => value + 1); setTab('stats'); }} onOpenAccount={openAccount} /></View>
           {tab === 'stats' && <StatsScreen onOpenAccount={() => openAccount(true)} dailyLeaderboardRequest={dailyLeaderboardRequest} />}
