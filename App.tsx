@@ -16,6 +16,7 @@ import { colors } from './src/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
 import * as Notifications from 'expo-notifications';
+import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import { Onboarding } from './src/components/Onboarding';
 import { dailyChallengeCompleted, disableDailyReminders, enableDailyReminders, refreshDailyReminders, updateReminderHour } from './src/services/dailyReminders';
 import { defaultDiceAnimation, DiceAnimation, diceAnimationStorageKey } from './src/lib/diceAnimation';
@@ -142,6 +143,15 @@ export default function App() {
   const handleDailyCompleted = useCallback(() => { void dailyChallengeCompleted(); }, []);
   const handlePlayNavigationChange = useCallback((canContinue: boolean, settingsOpen: boolean) => { setCanContinueGame(canContinue); setGameSettingsOpen(settingsOpen); }, []);
   const openAccount = (createAccount = false) => { if (createAccount) setAccountRegistrationRequest((value) => value + 1); setTab('account'); };
+  const tabBarContent = tabs.map((item) => { const active = tab === item.key || (tab === 'admin' && item.key === 'account'); return (
+    <Pressable key={item.key} onPress={() => { void Haptics.selectionAsync(); if (item.key === 'game' && canContinueGame && (tab !== 'game' || gameSettingsOpen)) setResumeGameRequest((value) => value + 1); setTab(item.key); }} style={[styles.tab, arcadeModeEnabled && styles.arcadeTab, active && styles.activeTabPill, arcadeModeEnabled && active && styles.arcadeActiveTabPill]}>
+      <Ionicons name={active ? item.activeIcon : item.icon} size={23} color={active ? colors.cyan : colors.muted} />
+      {item.key === 'game' && <LiveTurnBadge visible={tab !== 'game' || gameSettingsOpen} />}
+      {item.key === 'account' && <SignedOutBadge />}
+      <Text style={[styles.tabLabel, active && styles.activeTab]}>{item.key === 'game' && canContinueGame && (tab !== 'game' || gameSettingsOpen) ? 'Resume' : item.label}</Text>
+    </Pressable>
+  ); });
+  const useLiquidGlass = !arcadeModeEnabled && isGlassEffectAPIAvailable();
 
   return (
     <ArcadeModeProvider enabled={arcadeModeEnabled}><SafeAreaProvider>
@@ -157,16 +167,9 @@ export default function App() {
           {tab === 'admin' && <AdminScreen onClose={() => setTab('account')} />}
           {tab === 'about' && <AboutScreen />}
         </View>
-        <View style={[styles.tabBar, arcadeModeEnabled && styles.arcadeTabBar]}>
-          {tabs.map((item) => { const active = tab === item.key || (tab === 'admin' && item.key === 'account'); return (
-            <Pressable key={item.key} onPress={() => { void Haptics.selectionAsync(); if (item.key === 'game' && canContinueGame && (tab !== 'game' || gameSettingsOpen)) setResumeGameRequest((value) => value + 1); setTab(item.key); }} style={[styles.tab, arcadeModeEnabled && styles.arcadeTab, active && styles.activeTabPill, arcadeModeEnabled && active && styles.arcadeActiveTabPill]}>
-              <Ionicons name={active ? item.activeIcon : item.icon} size={23} color={active ? colors.cyan : colors.muted} />
-              {item.key === 'game' && <LiveTurnBadge visible={tab !== 'game' || gameSettingsOpen} />}
-              {item.key === 'account' && <SignedOutBadge />}
-              <Text style={[styles.tabLabel, active && styles.activeTab]}>{item.key === 'game' && canContinueGame && (tab !== 'game' || gameSettingsOpen) ? 'Resume' : item.label}</Text>
-            </Pressable>
-          ); })}
-        </View>
+        {useLiquidGlass
+          ? <GlassView colorScheme="dark" glassEffectStyle="regular" tintColor="rgba(8, 31, 34, 0.42)" style={[styles.tabBar, styles.glassTabBar]}>{tabBarContent}</GlassView>
+          : <View style={[styles.tabBar, arcadeModeEnabled && styles.arcadeTabBar]}>{tabBarContent}</View>}
         <Onboarding visible={showOnboarding} onFinish={finishOnboarding} onEnableReminders={() => changeReminders(true)} />
         {arcadeModeEnabled && <View pointerEvents="none" style={styles.arcadeOverlay}>{scanlines.map((line) => <View key={line} style={styles.arcadeScanline} />)}</View>}
       </SafeAreaView>
@@ -203,6 +206,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 10,
   },
+  glassTabBar: { backgroundColor: 'transparent', borderColor: 'rgba(151, 255, 242, 0.2)', overflow: 'hidden' },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 3, borderRadius: 27 },
   liveTurnBadge: { position: 'absolute', top: 4, right: 18, minWidth: 18, height: 18, paddingHorizontal: 4, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.pink, borderWidth: 2, borderColor: '#121a1d' },
   liveTurnBadgeText: { color: colors.white, fontSize: 9, lineHeight: 11, fontWeight: '900' },
