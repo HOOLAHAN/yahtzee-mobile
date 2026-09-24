@@ -18,7 +18,8 @@
       "package": "com.iainhoolahan.yahtzee",
       "adaptiveIcon": {
         "backgroundColor": "#080B0C",
-        "foregroundImage": "./assets/yahtzee-dice-logo.png"
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
     },
