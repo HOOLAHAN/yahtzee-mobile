@@ -16,6 +16,7 @@
     },
     "android": {
       "package": "com.yahtzee.mobile",
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#080B0C",
         "foregroundImage": "./assets/android-icon-foreground-v2.png"
