@@ -174,18 +174,26 @@ function PeriodSelector({
 function NativeChart({
   bars,
   line,
+  labels,
   startLabel,
   endLabel,
+  barLabel = "Games",
+  lineLabel = "Value",
   barColor = colors.cyan,
   lineColor = colors.pink,
 }: {
   bars: number[];
   line?: number[];
+  labels: string[];
   startLabel: string;
   endLabel: string;
+  barLabel?: string;
+  lineLabel?: string;
   barColor?: string;
   lineColor?: string;
 }) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  useEffect(() => setSelectedIndex(null), [labels.join("|")]);
   const maxBar = Math.max(1, ...bars);
   const maxLine = Math.max(1, ...(line ?? []));
   const count = Math.max(1, bars.length);
@@ -253,11 +261,36 @@ function NativeChart({
             </>
           )}
         </Svg>
+        <View style={styles.chartTouchLayer} pointerEvents="box-none">
+          {bars.map((value, index) => (
+            <Pressable
+              key={index}
+              accessibilityRole="button"
+              accessibilityLabel={`${labels[index] ?? "Period"}: ${value} ${barLabel}${line ? `, ${line[index]} ${lineLabel}` : ""}`}
+              onPress={() => setSelectedIndex(index)}
+              style={[
+                styles.chartTouch,
+                selectedIndex === index && styles.chartTouchSelected,
+              ]}
+            />
+          ))}
+        </View>
       </View>
       <View style={styles.chartAxis}>
         <Text style={styles.chartAxisText}>{startLabel}</Text>
         <Text style={styles.chartAxisText}>{endLabel}</Text>
       </View>
+      {selectedIndex !== null && (
+        <View style={styles.chartSelection}>
+          <Text style={styles.chartSelectionDate}>
+            {labels[selectedIndex] ?? "Selected period"}
+          </Text>
+          <Text style={styles.chartSelectionValue}>
+            {bars[selectedIndex]} {barLabel}
+            {line ? ` · ${line[selectedIndex]} ${lineLabel}` : ""}
+          </Text>
+        </View>
+      )}
     </>
   );
 }
@@ -291,8 +324,10 @@ function SignupChart({ users }: { users: AdminUser[] }) {
       <PeriodSelector value={period} onChange={setPeriod} />
       <NativeChart
         bars={values}
+        labels={buckets.map((bucket) => bucket.title)}
         startLabel={buckets[0]?.label ?? "Earlier"}
         endLabel={buckets.at(-1)?.label ?? "Today"}
+        barLabel="accounts"
         barColor={colors.pink}
       />
     </View>
@@ -340,8 +375,11 @@ function OverallActivityChart({ data }: { data: AdminDashboardData }) {
       <NativeChart
         bars={points.map((point) => point.games)}
         line={points.map((point) => point.players)}
+        labels={buckets.map((bucket) => bucket.title)}
         startLabel={buckets[0]?.label ?? "Earlier"}
         endLabel={buckets.at(-1)?.label ?? "Today"}
+        barLabel="games"
+        lineLabel="players"
       />
     </View>
   );
@@ -400,8 +438,11 @@ function UserActivityChart({ user }: { user: AdminUser }) {
       <NativeChart
         bars={points.map((point) => point.games)}
         line={points.map((point) => point.score)}
+        labels={buckets.map((bucket) => bucket.title)}
         startLabel={buckets[0]?.label ?? "Earlier"}
         endLabel={buckets.at(-1)?.label ?? "Today"}
+        barLabel="games"
+        lineLabel="average score"
       />
     </View>
   );
@@ -1556,7 +1597,46 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   periodTextActive: { color: colors.background },
-  nativeChart: { height: 180, overflow: "visible" },
+  nativeChart: { height: 180, overflow: "visible", position: "relative" },
+  chartTouchLayer: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: "2%",
+    right: "2%",
+    flexDirection: "row",
+  },
+  chartTouch: { flex: 1, borderRadius: 3 },
+  chartTouchSelected: {
+    backgroundColor: "rgba(250,255,0,.10)",
+    borderWidth: 1,
+    borderColor: "rgba(250,255,0,.42)",
+  },
+  chartSelection: {
+    marginTop: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(250,255,0,.42)",
+    backgroundColor: colors.background,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  chartSelectionDate: {
+    flex: 1,
+    color: colors.mint,
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  chartSelectionValue: {
+    color: colors.yellow,
+    fontSize: 10,
+    fontWeight: "900",
+    textAlign: "right",
+  },
   legend: { flexDirection: "row", gap: 8, alignItems: "center" },
   legendGames: {
     color: colors.cyan,
