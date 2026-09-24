@@ -30,7 +30,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     android: {
       ...config.android,
-      package: `com.iainhoolahan.yahtzee${current.bundleSuffix}`,
+      package: `com.yahtzee.mobile${current.bundleSuffix}`,
       intentFilters: [{
         action: 'VIEW',
         autoVerify: true,

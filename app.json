@@ -15,7 +15,7 @@
       }
     },
     "android": {
-      "package": "com.iainhoolahan.yahtzee",
+      "package": "com.yahtzee.mobile",
       "adaptiveIcon": {
         "backgroundColor": "#080B0C",
         "foregroundImage": "./assets/android-icon-foreground-v2.png"
